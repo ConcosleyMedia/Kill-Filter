@@ -1,26 +1,69 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+@theme {
+  /* Brand palette — kept in sync with _design/mockup-v6.html */
+  --color-bg: #EFE9DC;
+  --color-bg-panel: #E8E2D3;
+  --color-bg-card: #F5F0E4;
+  --color-ink: #0F0F0F;
+  --color-ink-soft: #4A4A4A;
+  --color-ink-faint: #8C8579;
+  --color-rule: #C9C0AC;
+  --color-rule-strong: #9F9684;
+  --color-terminal-bg: #0E0E0E;
+  --color-terminal-border: #2A2A2A;
+  --color-terminal-text: #E8E2D3;
+  --color-terminal-faint: #6B6358;
+  --color-accent: #DD3300;
+  --color-accent-warm: #E85D2C;
+  --color-kill: #CC3333;
+  --color-kill-bright: #FF6060;
+  --color-rework: #D87600;
+  --color-rework-bright: #FFA94D;
+  --color-keep: #2A8C4A;
+  --color-keep-bright: #3FB369;
+
+  --font-sans: var(--font-inter), system-ui, -apple-system, sans-serif;
+  --font-display: var(--font-inter-tight), system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, "SF Mono", Menlo, monospace;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html, body {
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-image:
+    radial-gradient(circle at 20% 10%, rgba(221, 51, 0, 0.04) 0%, transparent 40%),
+    radial-gradient(circle at 80% 90%, rgba(0, 0, 0, 0.03) 0%, transparent 40%);
+  background-attachment: fixed;
+}
+
+/* Stream-in animations match the mockup's terminal feel. */
+@keyframes streamIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes verdictIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes barFill {
+  to { transform: scaleX(var(--fill, 0.5)); }
+}
+@keyframes blink {
+  0%, 50% { opacity: 1; }
+  50.01%, 100% { opacity: 0; }
+}
+
+.cursor-blink::after {
+  content: "▌";
+  display: inline-block;
+  margin-left: 2px;
+  animation: blink 1s step-end infinite;
+  color: var(--color-accent-warm);
 }
