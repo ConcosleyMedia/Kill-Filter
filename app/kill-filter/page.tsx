@@ -3,6 +3,46 @@
 import { useState } from "react";
 
 type Frequency = "monthly" | "yearly" | "one_time" | "unclear" | "";
+type Phase = "idle" | "running" | "result" | "error";
+type Verdict = "KILL" | "REWORK" | "KEEP";
+type CriterionKey =
+  | "paying_proximity"
+  | "build_scope"
+  | "validation_cost"
+  | "unfair_advantage"
+  | "retention_shape";
+
+interface CriterionEvent {
+  criterion: CriterionKey;
+  score: number;
+  reason: string;
+}
+
+interface VerdictEvent {
+  verdict: Verdict;
+  rule: string;
+  total: number;
+  display_total: number;
+  headline: string;
+  skill_version: string;
+  run_id: string;
+  cache_read_input_tokens?: number;
+  cache_creation_input_tokens?: number;
+}
+
+const CRITERION_LABEL: Record<CriterionKey, string> = {
+  paying_proximity: "paying proximity",
+  build_scope: "build scope",
+  validation_cost: "validation cost",
+  unfair_advantage: "unfair advantage",
+  retention_shape: "retention shape",
+};
+
+const VERDICT_FOOTER: Record<Verdict, string> = {
+  KILL: "Got killed? Good. Workshop the next one with people doing the same thing. → $9/mo",
+  REWORK: "Stuck on who pays? Members get unstuck in the Friday thread. → $9/mo",
+  KEEP: "These 4 files get you started. The full 10-file blueprint, the Wall-Skip Kit, and 50+ working repos are inside Build Room. → $9/mo",
+};
 
 const PRESETS = [
   {
@@ -50,9 +90,15 @@ export default function KillFilterPage() {
   const [frequency, setFrequency] = useState<Frequency>("");
   const [userContext, setUserContext] = useState("");
 
+  const [phase, setPhase] = useState<Phase>("idle");
+  const [criteria, setCriteria] = useState<CriterionEvent[]>([]);
+  const [verdict, setVerdict] = useState<VerdictEvent | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
   const required = [idea, buyer, paysFor, frequency];
   const filledCount = required.filter((v) => v.trim().length > 0).length;
   const ready = filledCount === 4;
+  const ideaSnippet = idea.length > 60 ? idea.slice(0, 60) + "..." : idea;
 
   const applyPreset = (key: string) => {
     const p = PRESETS.find((x) => x.key === key);
@@ -69,10 +115,86 @@ export default function KillFilterPage() {
     applyPreset(k);
   };
 
-  const onSubmit = () => {
+  const reset = () => {
+    setPhase("idle");
+    setCriteria([]);
+    setVerdict(null);
+    setErrorMsg(null);
+  };
+
+  const runFilter = async () => {
     if (!ready) return;
-    // TODO: call /api/score and stream verdict — wired in step 5
-    console.log("submit", { idea, buyer, paysFor, frequency, userContext });
+    setPhase("running");
+    setCriteria([]);
+    setVerdict(null);
+    setErrorMsg(null);
+
+    try {
+      const res = await fetch("/api/score", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          idea,
+          buyer,
+          pays_for: paysFor,
+          frequency,
+          user_context: userContext,
+        }),
+      });
+
+      if (!res.ok || !res.body) {
+        const err = await res.json().catch(() => ({ error: "request_failed" }));
+        setErrorMsg(typeof err.error === "string" ? err.error : "request_failed");
+        setPhase("error");
+        return;
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      // Parse SSE: events are separated by blank lines, fields by single newlines.
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        let sepIdx: number;
+        while ((sepIdx = buffer.indexOf("\n\n")) !== -1) {
+          const block = buffer.slice(0, sepIdx);
+          buffer = buffer.slice(sepIdx + 2);
+
+          let event = "message";
+          let data = "";
+          for (const line of block.split("\n")) {
+            if (line.startsWith("event: ")) event = line.slice(7);
+            else if (line.startsWith("data: ")) data = line.slice(6);
+          }
+          if (!data) continue;
+
+          let payload: unknown;
+          try {
+            payload = JSON.parse(data);
+          } catch {
+            continue;
+          }
+
+          if (event === "criterion") {
+            setCriteria((prev) => [...prev, payload as CriterionEvent]);
+          } else if (event === "verdict") {
+            setVerdict(payload as VerdictEvent);
+            setPhase("result");
+          } else if (event === "error") {
+            const m = (payload as { message?: string }).message ?? "unknown";
+            setErrorMsg(m);
+            setPhase("error");
+          }
+        }
+      }
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : "network_error");
+      setPhase("error");
+    }
   };
 
   return (
@@ -82,79 +204,40 @@ export default function KillFilterPage() {
       <div className="max-w-[1080px] mx-auto px-8 pt-12 pb-20">
         <Header />
 
-        <Presets onPick={applyPreset} onSurprise={surprise} />
+        {phase === "idle" && (
+          <Presets onPick={applyPreset} onSurprise={surprise} />
+        )}
 
         <Terminal>
-          <PromptLine />
-
-          <InputHelper>
-            <span className="text-[var(--color-accent-warm)] uppercase tracking-[0.1em] text-[10px] font-semibold block mb-0.5">
-              Required fields
-            </span>
-            Specific buyer + clear pricing model = better signal. Vague inputs cap your scores.
-          </InputHelper>
-
-          <div className="mt-3 flex flex-col gap-3">
-            <InputRow
-              label="idea"
-              required
-              value={idea}
-              onChange={setIdea}
-              placeholder="(your idea — 1-3 sentences)"
+          {phase === "idle" ? (
+            <IdleScreen
+              idea={idea}
+              buyer={buyer}
+              paysFor={paysFor}
+              frequency={frequency}
+              userContext={userContext}
+              setIdea={setIdea}
+              setBuyer={setBuyer}
+              setPaysFor={setPaysFor}
+              setFrequency={(v) => setFrequency(v as Frequency)}
+              setUserContext={setUserContext}
+              filledCount={filledCount}
+              ready={ready}
+              onRun={runFilter}
             />
-            <InputRow
-              label="buyer"
-              required
-              value={buyer}
-              onChange={setBuyer}
-              placeholder="(who pays you?)"
+          ) : (
+            <RunningScreen
+              ideaSnippet={ideaSnippet}
+              criteria={criteria}
+              verdict={verdict}
+              errorMsg={errorMsg}
+              phase={phase}
+              onReset={reset}
             />
-            <InputRow
-              label="pays_for"
-              required
-              value={paysFor}
-              onChange={setPaysFor}
-              placeholder="(what they pay for)"
-            />
-            <InputRow
-              label="frequency"
-              required
-              value={frequency}
-              onChange={(v) => setFrequency(v as Frequency)}
-              placeholder="monthly / yearly / one-time"
-            />
-            <InputRow
-              label="you"
-              optional
-              value={userContext}
-              onChange={setUserContext}
-              placeholder="(your edge — optional)"
-            />
-          </div>
-
-          <div className="mt-5 flex items-center gap-4">
-            <button
-              type="button"
-              onClick={onSubmit}
-              disabled={!ready}
-              className="bg-[var(--color-accent)] text-white px-6 py-2.5 rounded-[3px] font-mono text-xs uppercase tracking-[0.1em] font-medium transition-colors hover:bg-[var(--color-accent-warm)] disabled:bg-white/[0.08] disabled:text-[var(--color-terminal-faint)] disabled:cursor-not-allowed cursor-pointer"
-            >
-              Run filter →
-            </button>
-            <span
-              className={`font-mono text-[11px] uppercase tracking-[0.08em] ${
-                ready ? "text-[var(--color-keep-bright)]" : "text-[var(--color-terminal-faint)]"
-              }`}
-            >
-              <strong className={ready ? "text-[var(--color-keep-bright)]" : "text-[var(--color-terminal-text)]"}>
-                {filledCount}
-              </strong>{" "}
-              of 4 required fields
-            </span>
-          </div>
+          )}
         </Terminal>
 
-        <BottomStatus />
+        <BottomStatus skillVersion={verdict?.skill_version ?? "1.0"} />
       </div>
     </div>
   );
@@ -195,7 +278,7 @@ function Header() {
       <h1 className="font-display font-extrabold text-[clamp(40px,5.5vw,64px)] leading-[0.95] tracking-[-0.035em] mb-4 text-[var(--color-ink)]">
         Most AI tells you yes.
         <br />
-        <em className="not-italic font-extrabold text-[var(--color-accent)] italic">
+        <em className="font-extrabold text-[var(--color-accent)] italic">
           The Kill Filter
         </em>{" "}
         is built to say no.
@@ -257,7 +340,10 @@ function Terminal({ children }: { children: React.ReactNode }) {
   return (
     <div
       className="bg-[var(--color-terminal-bg)] rounded-md overflow-hidden"
-      style={{ boxShadow: "inset 0 1px 0 rgba(255,255,255,0.05), 0 24px 48px -12px rgba(0,0,0,0.18)" }}
+      style={{
+        boxShadow:
+          "inset 0 1px 0 rgba(255,255,255,0.05), 0 24px 48px -12px rgba(0,0,0,0.18)",
+      }}
     >
       <div className="bg-[#1A1A1A] border-b border-[var(--color-terminal-border)] px-4 py-2.5 flex items-center gap-3.5">
         <div className="flex gap-1.5">
@@ -286,16 +372,270 @@ function PromptLine() {
   );
 }
 
-function InputHelper({ children }: { children: React.ReactNode }) {
+function IdleScreen({
+  idea,
+  buyer,
+  paysFor,
+  frequency,
+  userContext,
+  setIdea,
+  setBuyer,
+  setPaysFor,
+  setFrequency,
+  setUserContext,
+  filledCount,
+  ready,
+  onRun,
+}: {
+  idea: string;
+  buyer: string;
+  paysFor: string;
+  frequency: string;
+  userContext: string;
+  setIdea: (v: string) => void;
+  setBuyer: (v: string) => void;
+  setPaysFor: (v: string) => void;
+  setFrequency: (v: string) => void;
+  setUserContext: (v: string) => void;
+  filledCount: number;
+  ready: boolean;
+  onRun: () => void;
+}) {
+  return (
+    <>
+      <PromptLine />
+
+      <div
+        className="my-4 mb-2 px-3.5 py-2.5 rounded-r-[3px] text-[12.5px] text-[var(--color-terminal-text)]"
+        style={{
+          background: "rgba(232, 93, 44, 0.08)",
+          borderLeft: "2px solid var(--color-accent-warm)",
+        }}
+      >
+        <span className="text-[var(--color-accent-warm)] uppercase tracking-[0.1em] text-[10px] font-semibold block mb-0.5">
+          Required fields
+        </span>
+        Specific buyer + clear pricing model = better signal. Vague inputs cap your scores.
+      </div>
+
+      <div className="mt-3 flex flex-col gap-3">
+        <InputRow label="idea" required value={idea} onChange={setIdea} placeholder="(your idea — 1-3 sentences)" />
+        <InputRow label="buyer" required value={buyer} onChange={setBuyer} placeholder="(who pays you?)" />
+        <InputRow label="pays_for" required value={paysFor} onChange={setPaysFor} placeholder="(what they pay for)" />
+        <InputRow label="frequency" required value={frequency} onChange={setFrequency} placeholder="monthly / yearly / one-time" />
+        <InputRow label="you" optional value={userContext} onChange={setUserContext} placeholder="(your edge — optional)" />
+      </div>
+
+      <div className="mt-5 flex items-center gap-4">
+        <button
+          type="button"
+          onClick={onRun}
+          disabled={!ready}
+          className="bg-[var(--color-accent)] text-white px-6 py-2.5 rounded-[3px] font-mono text-xs uppercase tracking-[0.1em] font-medium transition-colors hover:bg-[var(--color-accent-warm)] disabled:bg-white/[0.08] disabled:text-[var(--color-terminal-faint)] disabled:cursor-not-allowed cursor-pointer"
+        >
+          Run filter →
+        </button>
+        <span
+          className={`font-mono text-[11px] uppercase tracking-[0.08em] ${
+            ready ? "text-[var(--color-keep-bright)]" : "text-[var(--color-terminal-faint)]"
+          }`}
+        >
+          <strong className={ready ? "text-[var(--color-keep-bright)]" : "text-[var(--color-terminal-text)]"}>
+            {filledCount}
+          </strong>{" "}
+          of 4 required fields
+        </span>
+      </div>
+    </>
+  );
+}
+
+function RunningScreen({
+  ideaSnippet,
+  criteria,
+  verdict,
+  errorMsg,
+  phase,
+  onReset,
+}: {
+  ideaSnippet: string;
+  criteria: CriterionEvent[];
+  verdict: VerdictEvent | null;
+  errorMsg: string | null;
+  phase: Phase;
+  onReset: () => void;
+}) {
+  const showCursor = phase === "running" && !verdict && !errorMsg;
+  return (
+    <>
+      <PromptLine />
+      <div className="text-[#5A5045] italic mt-2">
+        {`// running... ${ideaSnippet}`}
+      </div>
+      {(criteria.length > 0 || phase !== "idle") && (
+        <div className="text-[#5A5045] italic mt-1">
+          {`// scoring against 5 criteria`}
+          {showCursor && criteria.length === 0 && <span className="cursor-blink" />}
+        </div>
+      )}
+
+      <div className="mt-5 flex flex-col gap-3">
+        {criteria.map((c, i) => (
+          <ScoreRow key={c.criterion} index={i} criterion={c} />
+        ))}
+      </div>
+
+      {verdict && <VerdictBlock verdict={verdict} />}
+
+      {errorMsg && (
+        <div
+          className="mt-6 px-4 py-3 rounded-[3px] text-[12.5px]"
+          style={{
+            background: "rgba(204, 51, 51, 0.10)",
+            border: "1px solid rgba(204, 51, 51, 0.4)",
+            color: "#FF8B8B",
+          }}
+        >
+          <div className="font-semibold uppercase tracking-[0.1em] text-[10px] mb-1">Error</div>
+          <div className="font-mono text-[12.5px]">{errorMsg}</div>
+        </div>
+      )}
+
+      {(verdict || errorMsg) && (
+        <div className="mt-7">
+          <button
+            type="button"
+            onClick={onReset}
+            className="bg-transparent border border-[var(--color-terminal-border)] text-[var(--color-terminal-text)] px-5 py-2 rounded-[3px] font-mono text-[11px] uppercase tracking-[0.1em] hover:border-[var(--color-accent-warm)] hover:text-[var(--color-accent-warm)] cursor-pointer transition-colors"
+          >
+            ← Run another idea
+          </button>
+        </div>
+      )}
+    </>
+  );
+}
+
+function ScoreRow({
+  index,
+  criterion,
+}: {
+  index: number;
+  criterion: CriterionEvent;
+}) {
+  const tier = criterion.score <= 4 ? "low" : criterion.score <= 6 ? "mid" : "high";
+  const fillPct = criterion.score / 10;
+  const barColor =
+    tier === "high"
+      ? "var(--color-keep-bright)"
+      : tier === "mid"
+        ? "#E5A03A"
+        : "var(--color-accent)";
+  const scoreColor =
+    tier === "high"
+      ? "var(--color-keep-bright)"
+      : tier === "mid"
+        ? "#E5A03A"
+        : "var(--color-accent)";
   return (
     <div
-      className="my-4 mb-2 px-3.5 py-2.5 rounded-r-[3px] text-[12.5px] text-[var(--color-terminal-text)]"
+      className="grid items-center gap-3.5 opacity-0"
       style={{
-        background: "rgba(232, 93, 44, 0.08)",
-        borderLeft: "2px solid var(--color-accent-warm)",
+        gridTemplateColumns: "175px 100px 1fr 50px",
+        animation: `streamIn 0.4s ease-out ${index * 50 + 100}ms forwards`,
       }}
     >
-      {children}
+      <div className="text-[var(--color-terminal-text)] text-[13px]">
+        {CRITERION_LABEL[criterion.criterion]}
+      </div>
+      <div className="h-[7px] bg-white/[0.06] rounded-[1px] overflow-hidden">
+        <div
+          className="h-full origin-left"
+          style={
+            {
+              ["--fill" as string]: String(fillPct),
+              transform: "scaleX(0)",
+              animation: `barFill 0.6s ease-out ${index * 50 + 250}ms forwards`,
+              background: barColor,
+            } as React.CSSProperties
+          }
+        />
+      </div>
+      <div className="text-[var(--color-terminal-faint)] text-[12.5px] leading-[1.4]">
+        {criterion.reason}
+      </div>
+      <div
+        className="font-mono font-medium text-right text-[13px]"
+        style={{ color: scoreColor }}
+      >
+        {criterion.score}/10
+      </div>
+    </div>
+  );
+}
+
+function VerdictBlock({ verdict }: { verdict: VerdictEvent }) {
+  const v = verdict.verdict.toLowerCase() as "kill" | "rework" | "keep";
+  const bg =
+    v === "kill"
+      ? "rgba(204, 51, 51, 0.10)"
+      : v === "rework"
+        ? "rgba(216, 118, 0, 0.10)"
+        : "rgba(63, 179, 105, 0.12)";
+  const border =
+    v === "kill"
+      ? "rgba(204, 51, 51, 0.4)"
+      : v === "rework"
+        ? "rgba(216, 118, 0, 0.4)"
+        : "rgba(63, 179, 105, 0.4)";
+  const verdictColor =
+    v === "kill"
+      ? "var(--color-kill-bright)"
+      : v === "rework"
+        ? "var(--color-rework-bright)"
+        : "var(--color-keep-bright)";
+  const sub =
+    v === "rework"
+      ? "Your idea has bones — but it's not specific enough to score well. Sharpen the weakest criterion above and rerun."
+      : v === "kill"
+        ? "This exact framing won't work. The product concept might still be salvageable around a different buyer or edge."
+        : null;
+
+  return (
+    <div
+      className="mt-6 px-5 py-4 rounded-[3px] opacity-0"
+      style={{
+        background: bg,
+        border: `1px solid ${border}`,
+        animation: "verdictIn 0.5s ease-out 0.3s forwards",
+      }}
+    >
+      <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-[var(--color-terminal-faint)] mb-2">
+        Verdict · {verdict.display_total}/100
+      </div>
+      <div className="font-mono text-[16px] font-medium leading-[1.4] text-[var(--color-terminal-text)]">
+        <span
+          className="font-bold mr-2.5 text-[18px]"
+          style={{ color: verdictColor }}
+        >
+          {verdict.verdict}
+        </span>
+        {verdict.headline}
+      </div>
+      {sub && (
+        <div className="mt-2.5 text-[var(--color-terminal-faint)] text-[12.5px] leading-[1.5]">
+          {sub}
+        </div>
+      )}
+      <div
+        className="mt-4 pt-3.5 text-[12.5px] leading-[1.5]"
+        style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}
+      >
+        <span className="text-[var(--color-accent-warm)]">→</span>{" "}
+        <span className="text-[var(--color-terminal-text)]">
+          {VERDICT_FOOTER[verdict.verdict]}
+        </span>
+      </div>
     </div>
   );
 }
@@ -340,11 +680,11 @@ function InputRow({
   );
 }
 
-function BottomStatus() {
+function BottomStatus({ skillVersion }: { skillVersion: string }) {
   return (
     <div className="mt-6 px-2 flex justify-between items-center font-mono text-[11px] uppercase tracking-[0.08em] text-[var(--color-ink-faint)]">
       <span>Public surface · 1 idea/run · 3/day per IP</span>
-      <span>Skill v1.0</span>
+      <span>Skill v{skillVersion}</span>
     </div>
   );
 }
