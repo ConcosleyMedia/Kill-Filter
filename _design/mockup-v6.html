@@ -1,0 +1,1788 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Kill Filter · MVP Mockup v6</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #EFE9DC;
+    --bg-panel: #E8E2D3;
+    --bg-card: #F5F0E4;
+    --ink: #0F0F0F;
+    --ink-soft: #4A4A4A;
+    --ink-faint: #8C8579;
+    --rule: #C9C0AC;
+    --rule-strong: #9F9684;
+    --terminal-bg: #0E0E0E;
+    --terminal-border: #2A2A2A;
+    --terminal-text: #E8E2D3;
+    --terminal-faint: #6B6358;
+    --accent: #DD3300;
+    --accent-warm: #E85D2C;
+    --kill: #CC3333;
+    --rework: #D87600;
+    --keep: #2A8C4A;
+    --keep-bright: #3FB369;
+    --mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+    --display: 'Inter Tight', system-ui, sans-serif;
+    --sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+  }
+
+  body {
+    background-image:
+      radial-gradient(circle at 20% 10%, rgba(221, 51, 0, 0.04) 0%, transparent 40%),
+      radial-gradient(circle at 80% 90%, rgba(0, 0, 0, 0.03) 0%, transparent 40%);
+  }
+
+  /* ---------- TOP BAR ---------- */
+  .topbar {
+    border-bottom: 1px solid var(--rule);
+    padding: 14px 32px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-family: var(--mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--ink-faint);
+    background: var(--bg);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+
+  .topbar .brand { color: var(--ink); font-weight: 500; }
+  .topbar .brand span { color: var(--accent); }
+
+  .topbar .quota { display: flex; gap: 18px; align-items: center; }
+
+  .quota-item { display: flex; gap: 6px; align-items: center; }
+  .quota-dot { width: 6px; height: 6px; background: var(--keep); border-radius: 50%; }
+  .quota-dot.warning { background: var(--accent); }
+
+  .demo-toggle {
+    display: flex; gap: 0;
+    border: 1px solid var(--rule-strong);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .demo-toggle button {
+    background: transparent; border: none;
+    padding: 6px 12px;
+    font-family: var(--mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--ink-soft);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .demo-toggle button.active { background: var(--ink); color: var(--bg); }
+  .demo-toggle button:hover:not(.active) { background: rgba(0,0,0,0.05); }
+
+  /* ---------- CONTAINER ---------- */
+  .container { max-width: 1080px; margin: 0 auto; padding: 48px 32px 80px; }
+
+  /* ---------- HEADER ---------- */
+  .header { margin-bottom: 36px; }
+
+  .stage-tag {
+    display: inline-block;
+    padding: 5px 12px;
+    background: rgba(221, 51, 0, 0.10);
+    border: 1px solid rgba(221, 51, 0, 0.25);
+    color: var(--accent);
+    font-family: var(--mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 18px;
+    border-radius: 2px;
+  }
+
+  h1 {
+    font-family: var(--display);
+    font-weight: 800;
+    font-size: clamp(40px, 5.5vw, 64px);
+    line-height: 0.95;
+    letter-spacing: -0.035em;
+    margin: 0 0 16px;
+  }
+  h1 em { font-style: italic; font-weight: 800; color: var(--accent); }
+
+  .subtitle {
+    font-size: 17px;
+    line-height: 1.5;
+    color: var(--ink-soft);
+    max-width: 580px;
+    margin: 0;
+  }
+
+  /* ---------- PRESETS ---------- */
+  .presets { margin: 36px 0 28px; }
+
+  .presets-label {
+    font-family: var(--mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--ink-faint);
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .presets-label::after {
+    content: ''; flex: 1; height: 1px; background: var(--rule);
+  }
+
+  .preset-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+  }
+
+  .preset {
+    background: transparent;
+    border: 1px solid var(--rule);
+    padding: 14px 16px;
+    text-align: left;
+    cursor: pointer;
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--ink);
+    transition: all 0.15s ease;
+    line-height: 1.4;
+    border-radius: 2px;
+  }
+  .preset:hover {
+    border-color: var(--ink);
+    background: rgba(15, 15, 15, 0.04);
+    transform: translateY(-1px);
+  }
+  .preset .label { display: block; font-weight: 500; }
+  .preset .meta {
+    display: block;
+    font-size: 10px;
+    color: var(--ink-faint);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-top: 6px;
+  }
+  .surprise {
+    grid-column: 1 / -1;
+    background: var(--ink); color: var(--bg); border-color: var(--ink);
+    text-align: center;
+    padding: 12px;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+  .surprise:hover {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: white;
+    transform: translateY(-1px);
+  }
+
+  /* ---------- TERMINAL ---------- */
+  .terminal {
+    background: var(--terminal-bg);
+    border-radius: 6px;
+    box-shadow: 0 1px 0 rgba(255,255,255,0.05) inset, 0 24px 48px -12px rgba(0,0,0,0.18);
+    overflow: hidden;
+  }
+
+  .terminal-chrome {
+    background: #1A1A1A;
+    border-bottom: 1px solid var(--terminal-border);
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .terminal-dots { display: flex; gap: 6px; }
+  .dot { width: 11px; height: 11px; border-radius: 50%; background: #3a3a3a; }
+  .dot.r { background: #FF5F57; }
+  .dot.y { background: #FEBC2E; }
+  .dot.g { background: #28C840; }
+
+  .terminal-title {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--terminal-faint);
+    text-transform: lowercase;
+    letter-spacing: 0.04em;
+    flex: 1;
+    text-align: center;
+  }
+
+  .terminal-body {
+    padding: 24px 28px 28px;
+    font-family: var(--mono);
+    font-size: 13.5px;
+    line-height: 1.65;
+    color: var(--terminal-text);
+    min-height: 320px;
+  }
+
+  .prompt-line { color: var(--terminal-faint); }
+  .prompt-line .arrow { color: var(--accent-warm); }
+  .prompt-line .cmd { color: var(--terminal-text); }
+  .comment { color: #5A5045; font-style: italic; }
+
+  /* ---------- INPUT FIXES (v3) ---------- */
+  .input-helper {
+    margin: 16px 0 8px;
+    padding: 10px 14px;
+    background: rgba(232, 93, 44, 0.08);
+    border-left: 2px solid var(--accent-warm);
+    border-radius: 0 3px 3px 0;
+    font-size: 12.5px;
+    color: var(--terminal-text);
+  }
+  .input-helper .helper-label {
+    color: var(--accent-warm);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-size: 10px;
+    font-weight: 600;
+    margin-bottom: 2px;
+  }
+
+  .input-area {
+    margin-top: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .input-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .input-prompt {
+    color: var(--accent-warm);
+    flex-shrink: 0;
+    width: 95px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .input-prompt .req {
+    color: var(--accent);
+    font-weight: 700;
+    font-size: 11px;
+  }
+  .input-prompt.optional {
+    color: var(--terminal-faint);
+  }
+  .input-field {
+    flex: 1;
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid var(--terminal-border);
+    color: var(--terminal-text);
+    font-family: var(--mono);
+    font-size: 13.5px;
+    padding: 6px 0;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .input-field:focus { border-bottom-color: var(--accent-warm); }
+  .input-field.filled { border-bottom-color: var(--keep-bright); }
+  .input-field::placeholder { color: var(--terminal-faint); font-style: italic; }
+
+  .run-row {
+    margin-top: 18px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .run-btn {
+    background: var(--accent);
+    border: none;
+    color: white;
+    padding: 11px 22px;
+    font-family: var(--mono);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    cursor: pointer;
+    border-radius: 3px;
+    transition: all 0.15s;
+    font-weight: 500;
+  }
+  .run-btn:hover:not(:disabled) { background: var(--accent-warm); transform: translateY(-1px); }
+  .run-btn:disabled {
+    background: rgba(255,255,255,0.08);
+    color: var(--terminal-faint);
+    cursor: not-allowed;
+  }
+
+  .field-counter {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--terminal-faint);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  .field-counter strong {
+    color: var(--keep-bright);
+  }
+  .field-counter.complete strong {
+    color: var(--keep-bright);
+  }
+
+  /* ---------- SCORING ---------- */
+  .scoring {
+    margin-top: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .score-row {
+    display: grid;
+    grid-template-columns: 175px 100px 1fr 50px;
+    align-items: center;
+    gap: 14px;
+    opacity: 0;
+    transform: translateY(4px);
+    animation: streamIn 0.4s ease-out forwards;
+  }
+  .score-row .crit-name { color: var(--terminal-text); font-size: 13px; }
+  .score-row .bar-track {
+    height: 7px;
+    background: rgba(255,255,255,0.06);
+    border-radius: 1px;
+    overflow: hidden;
+  }
+  .score-row .bar-fill {
+    height: 100%;
+    background: var(--accent-warm);
+    transform-origin: left;
+    animation: barFill 0.6s ease-out forwards;
+    transform: scaleX(0);
+  }
+  .score-row.high .bar-fill { background: var(--keep-bright); }
+  .score-row.mid .bar-fill { background: #E5A03A; }
+  .score-row.low .bar-fill { background: var(--accent); }
+  .score-row .reason { color: var(--terminal-faint); font-size: 12.5px; line-height: 1.4; }
+  .score-row .score { font-family: var(--mono); font-weight: 500; text-align: right; font-size: 13px; }
+  .score-row.low .score { color: var(--accent); }
+  .score-row.mid .score { color: #E5A03A; }
+  .score-row.high .score { color: var(--keep-bright); }
+
+  @keyframes streamIn { to { opacity: 1; transform: translateY(0); } }
+  @keyframes barFill { to { transform: scaleX(var(--fill, 0.5)); } }
+
+  /* ---------- VERDICT BLOCK ---------- */
+  .verdict-block {
+    margin-top: 22px;
+    padding: 18px 20px;
+    border-radius: 3px;
+    opacity: 0;
+    animation: verdictIn 0.5s ease-out 0.3s forwards;
+  }
+  .verdict-block.kill { background: rgba(204, 51, 51, 0.10); border: 1px solid rgba(204, 51, 51, 0.4); }
+  .verdict-block.rework { background: rgba(216, 118, 0, 0.10); border: 1px solid rgba(216, 118, 0, 0.4); }
+  .verdict-block.keep { background: rgba(63, 179, 105, 0.12); border: 1px solid rgba(63, 179, 105, 0.4); }
+
+  .verdict-label {
+    font-family: var(--mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--terminal-faint);
+    margin-bottom: 8px;
+  }
+  .verdict-headline {
+    font-family: var(--mono);
+    font-size: 16px;
+    font-weight: 500;
+    line-height: 1.4;
+    color: var(--terminal-text);
+  }
+  .verdict-headline .v {
+    font-size: 18px;
+    font-weight: 700;
+    margin-right: 10px;
+  }
+  .verdict-headline .v.kill { color: #FF6060; }
+  .verdict-headline .v.rework { color: #FFA94D; }
+  .verdict-headline .v.keep { color: var(--keep-bright); }
+
+  .verdict-sub {
+    color: var(--terminal-faint);
+    font-size: 12.5px;
+    margin-top: 10px;
+    line-height: 1.5;
+  }
+
+  @keyframes verdictIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ---------- BREAKOUT ---------- */
+  .breakout {
+    margin-top: 32px;
+    opacity: 0;
+    animation: verdictIn 0.6s ease-out 0.4s forwards;
+  }
+
+  .breakout-header {
+    margin-bottom: 18px;
+  }
+
+  .breakout-stage {
+    font-family: var(--mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--accent);
+    margin-bottom: 6px;
+  }
+
+  .breakout-title {
+    font-family: var(--display);
+    font-size: 32px;
+    font-weight: 700;
+    line-height: 1.05;
+    letter-spacing: -0.025em;
+    margin: 0 0 8px;
+    letter-spacing: -0.01em;
+  }
+  .breakout-title em { font-style: italic; font-weight: 700; color: var(--accent); }
+
+  .breakout-sub {
+    font-size: 15px;
+    color: var(--ink-soft);
+    line-height: 1.5;
+    max-width: 620px;
+    margin: 0;
+  }
+
+  /* ---------- CLARIFICATION CARDS (REWORK) + SIBLING CARDS (KILL) ---------- */
+  .option-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+    margin-top: 20px;
+  }
+
+  .option-card {
+    background: var(--bg-card);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: 22px 22px 18px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    flex-direction: column;
+    opacity: 0;
+    animation: streamIn 0.5s ease-out forwards;
+    position: relative;
+  }
+
+  .option-card:hover {
+    border-color: var(--accent);
+    transform: translateY(-3px);
+    box-shadow: 0 12px 28px -12px rgba(221, 51, 0, 0.25);
+  }
+
+  .option-card .opt-num {
+    position: absolute;
+    top: 14px; right: 18px;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--ink-faint);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+
+  .option-card .opt-tag {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--accent);
+    background: rgba(221, 51, 0, 0.08);
+    padding: 3px 9px;
+    border-radius: 2px;
+    margin-bottom: 14px;
+    align-self: flex-start;
+  }
+
+  .option-card .opt-idea {
+    font-size: 14.5px;
+    line-height: 1.45;
+    color: var(--ink);
+    font-weight: 500;
+    margin: 0 0 12px;
+    flex: 1;
+  }
+
+  .option-card .opt-fit {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink-faint);
+    line-height: 1.5;
+    border-top: 1px dashed var(--rule);
+    padding-top: 12px;
+    margin-bottom: 14px;
+  }
+
+  .option-card .opt-fit strong {
+    color: var(--ink-soft);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: 10px;
+    display: block;
+    margin-bottom: 3px;
+  }
+
+  .option-card .opt-cta {
+    background: var(--ink);
+    color: var(--bg);
+    border: none;
+    padding: 9px 14px;
+    font-family: var(--mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    border-radius: 3px;
+    transition: all 0.15s;
+    text-align: center;
+    width: 100%;
+  }
+
+  .option-card:hover .opt-cta {
+    background: var(--accent);
+  }
+
+  /* ---------- KEEP FILE CARDS ---------- */
+  .files-intro {
+    background: var(--bg-card);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: 22px 26px;
+    margin-bottom: 18px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 20px;
+    flex-wrap: wrap;
+  }
+
+  .files-intro h2 {
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: 28px;
+    line-height: 1.1;
+    letter-spacing: -0.025em;
+    margin: 0 0 6px;
+    letter-spacing: -0.01em;
+  }
+  .files-intro p { margin: 0; color: var(--ink-soft); font-size: 14px; max-width: 520px; }
+
+  .download-all-btn {
+    background: var(--ink); color: var(--bg);
+    border: none;
+    padding: 12px 22px;
+    font-family: var(--mono);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    cursor: pointer;
+    border-radius: 3px;
+    transition: all 0.15s;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  .download-all-btn:hover { background: var(--accent); transform: translateY(-1px); }
+
+  .file-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+  }
+
+  .file-card {
+    background: var(--bg-card);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: 20px;
+    transition: all 0.2s ease;
+    opacity: 0;
+    animation: streamIn 0.5s ease-out forwards;
+  }
+  .file-card:hover {
+    border-color: var(--rule-strong);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px -12px rgba(0,0,0,0.12);
+  }
+
+  .file-card-head {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 10px;
+  }
+  .file-name {
+    font-family: var(--mono);
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--ink);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .file-name .check { color: var(--keep); font-weight: 700; }
+
+  .file-actions { display: flex; gap: 14px; }
+  .file-actions a {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--ink-faint);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    text-decoration: none;
+    transition: color 0.15s;
+  }
+  .file-actions a:hover { color: var(--accent); }
+
+  .file-purpose {
+    font-family: var(--mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+    margin-bottom: 8px;
+  }
+  .file-summary {
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--ink-soft);
+    margin: 0 0 12px;
+  }
+  .file-includes {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink-faint);
+    line-height: 1.65;
+    border-top: 1px dashed var(--rule);
+    padding-top: 10px;
+  }
+  .file-includes-label {
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 10px;
+    margin-bottom: 4px;
+    color: var(--ink-faint);
+  }
+  .file-includes ul {
+    margin: 0; padding-left: 14px; list-style: none;
+  }
+  .file-includes li::before {
+    content: '·'; color: var(--accent);
+    margin-right: 8px; font-weight: 700;
+  }
+
+  /* ---------- HERO UPSELL ---------- */
+  .upsell-hero {
+    margin-top: 40px;
+    background: var(--ink);
+    color: var(--bg);
+    border-radius: 6px;
+    padding: 48px;
+    position: relative;
+    overflow: hidden;
+    opacity: 0;
+    animation: verdictIn 0.6s ease-out 0.7s forwards;
+  }
+  .upsell-hero::before {
+    content: '';
+    position: absolute;
+    top: -40%; right: -20%;
+    width: 600px; height: 600px;
+    background: radial-gradient(circle, rgba(221,51,0,0.15) 0%, transparent 60%);
+    pointer-events: none;
+  }
+  .upsell-hero-tag {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--accent-warm);
+    padding: 4px 10px;
+    border: 1px solid rgba(232, 93, 44, 0.4);
+    border-radius: 2px;
+    margin-bottom: 22px;
+  }
+  .upsell-hero h2 {
+    font-family: var(--display);
+    font-weight: 800;
+    font-size: clamp(32px, 4vw, 48px);
+    line-height: 0.98;
+    letter-spacing: -0.035em;
+    margin: 0 0 16px;
+    max-width: 700px;
+  }
+  .upsell-hero h2 em { font-style: italic; font-weight: 800; color: var(--accent-warm); }
+  .upsell-hero .lead {
+    font-size: 17px;
+    line-height: 1.5;
+    color: rgba(232, 226, 211, 0.75);
+    max-width: 580px;
+    margin: 0 0 32px;
+  }
+  .upsell-bullets {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+    margin-bottom: 36px;
+    padding: 28px 0;
+    border-top: 1px solid rgba(255,255,255,0.1);
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+  }
+  .upsell-bullet .num {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--accent-warm);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 8px;
+  }
+  .upsell-bullet h4 {
+    font-family: var(--display);
+    font-size: 19px;
+    font-weight: 600;
+    letter-spacing: -0.015em;
+    margin: 0 0 6px;
+    line-height: 1.2;
+  }
+  .upsell-bullet p {
+    font-size: 13.5px;
+    color: rgba(232, 226, 211, 0.65);
+    line-height: 1.45;
+    margin: 0;
+  }
+  .upsell-cta-row {
+    display: flex; align-items: center; gap: 24px; flex-wrap: wrap;
+  }
+  .upsell-cta {
+    background: var(--accent); color: white;
+    border: none;
+    padding: 16px 32px;
+    font-family: var(--mono);
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    cursor: pointer;
+    border-radius: 3px;
+    transition: all 0.15s;
+    font-weight: 500;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .upsell-cta:hover { background: var(--accent-warm); transform: translateY(-1px); }
+  .upsell-cta .price { opacity: 0.7; font-size: 11px; }
+  .upsell-secondary { font-family: var(--mono); font-size: 12px; color: rgba(232, 226, 211, 0.5); }
+
+  /* ---------- SOFT FOOTER ---------- */
+  .soft-footer {
+    margin-top: 24px;
+    padding: 22px 26px;
+    background: var(--bg-card);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 24px;
+    flex-wrap: wrap;
+  }
+  .soft-footer-text {
+    font-size: 14.5px;
+    color: var(--ink);
+    line-height: 1.5;
+    max-width: 600px;
+    margin: 0;
+  }
+  .soft-footer-text strong { color: var(--accent); }
+  .soft-cta {
+    background: var(--ink);
+    color: var(--bg);
+    border: none;
+    padding: 12px 22px;
+    font-family: var(--mono);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    border-radius: 3px;
+    transition: all 0.15s;
+    font-weight: 500;
+    white-space: nowrap;
+    text-decoration: none;
+  }
+  .soft-cta:hover { background: var(--accent); transform: translateY(-1px); }
+
+  /* ---------- RATE LIMIT SCREEN ---------- */
+  .rate-limit-screen {
+    background: var(--ink); color: var(--bg);
+    border-radius: 6px;
+    padding: 56px 48px;
+    text-align: left;
+    position: relative;
+    overflow: hidden;
+  }
+  .rate-limit-screen::before {
+    content: '';
+    position: absolute; inset: 0;
+    background:
+      radial-gradient(circle at 30% 20%, rgba(221,51,0,0.18) 0%, transparent 50%),
+      radial-gradient(circle at 80% 80%, rgba(221,51,0,0.10) 0%, transparent 50%);
+    pointer-events: none;
+  }
+  .rate-limit-content { position: relative; z-index: 1; }
+  .rate-limit-warning {
+    font-family: var(--mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--accent-warm);
+    padding: 4px 10px;
+    border: 1px solid rgba(232,93,44,0.4);
+    border-radius: 2px;
+    display: inline-block;
+    margin-bottom: 22px;
+  }
+  .rate-limit-screen h2 {
+    font-family: var(--display);
+    font-size: clamp(36px, 5vw, 56px);
+    font-weight: 800;
+    line-height: 0.98;
+    letter-spacing: -0.035em;
+    margin: 0 0 14px;
+    max-width: 680px;
+  }
+  .rate-limit-screen h2 em { font-style: italic; font-weight: 800; color: var(--accent-warm); }
+  .rate-limit-screen .lead {
+    font-size: 17.5px;
+    line-height: 1.5;
+    color: rgba(232, 226, 211, 0.78);
+    max-width: 600px;
+    margin: 0 0 36px;
+  }
+  .rate-limit-options {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 32px;
+  }
+  .rl-option {
+    padding: 24px;
+    border-radius: 4px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.1);
+  }
+  .rl-option.featured {
+    background: rgba(221,51,0,0.12);
+    border-color: rgba(232,93,44,0.5);
+    position: relative;
+  }
+  .rl-option.featured::after {
+    content: 'RECOMMENDED';
+    position: absolute;
+    top: -10px; right: 16px;
+    background: var(--accent); color: white;
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: 0.12em;
+    padding: 3px 8px;
+    border-radius: 2px;
+  }
+  .rl-option-label {
+    font-family: var(--mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--terminal-faint);
+    margin-bottom: 8px;
+  }
+  .rl-option.featured .rl-option-label { color: var(--accent-warm); }
+  .rl-option h3 {
+    font-family: var(--display);
+    font-size: 26px;
+    font-weight: 700;
+    line-height: 1.1;
+    letter-spacing: -0.025em;
+    margin: 0 0 8px;
+  }
+  .rl-option p {
+    font-size: 13.5px;
+    line-height: 1.5;
+    color: rgba(232,226,211,0.7);
+    margin: 0 0 16px;
+  }
+  .rl-cta-link {
+    font-family: var(--mono);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--bg);
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    border-bottom: 1px solid rgba(255,255,255,0.3);
+    padding-bottom: 4px;
+    transition: all 0.15s;
+  }
+  .rl-option.featured .rl-cta-link {
+    color: var(--accent-warm);
+    border-bottom-color: var(--accent-warm);
+  }
+  .rl-cta-link:hover { transform: translateX(4px); }
+  .rl-footnote {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: rgba(232,226,211,0.4);
+    text-align: left;
+    border-top: 1px solid rgba(255,255,255,0.08);
+    padding-top: 18px;
+  }
+
+  /* ---------- CONTROLS ---------- */
+  .controls {
+    margin-top: 40px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 18px;
+    border-top: 1px solid var(--rule);
+    font-family: var(--mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--ink-faint);
+  }
+  .reset-btn {
+    background: transparent;
+    border: 1px solid var(--rule);
+    color: var(--ink-soft);
+    padding: 8px 16px;
+    font-family: var(--mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    border-radius: 2px;
+    transition: all 0.15s;
+  }
+  .reset-btn:hover { border-color: var(--ink); color: var(--ink); }
+
+  /* ---------- NOTES ---------- */
+  .notes {
+    margin-top: 56px;
+    padding: 24px;
+    background: rgba(15,15,15,0.03);
+    border-left: 3px solid var(--accent);
+    border-radius: 0 3px 3px 0;
+    font-size: 13px;
+    color: var(--ink-soft);
+    line-height: 1.6;
+  }
+  .notes h3 {
+    font-family: var(--mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--accent);
+    margin: 0 0 10px;
+  }
+  .notes ul { margin: 8px 0 0; padding-left: 18px; }
+  .notes li { margin-bottom: 4px; }
+
+  /* refined banner above the inputs when arriving from a clarification */
+  .refined-banner {
+    margin-top: 16px;
+    padding: 12px 16px;
+    background: rgba(63, 179, 105, 0.08);
+    border: 1px solid rgba(63, 179, 105, 0.3);
+    border-radius: 3px;
+    font-size: 12.5px;
+    color: var(--terminal-text);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .refined-banner .check { color: var(--keep-bright); font-weight: 700; }
+  .refined-banner-label {
+    font-family: var(--mono);
+    color: var(--keep-bright);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-size: 10px;
+    font-weight: 600;
+  }
+
+  .hidden { display: none !important; }
+
+  /* Mobile */
+  @media (max-width: 720px) {
+    .topbar { padding: 12px 16px; flex-wrap: wrap; gap: 8px; }
+    .container { padding: 32px 16px 64px; }
+    .preset-row { grid-template-columns: 1fr; }
+    .terminal-body { padding: 18px 16px; font-size: 12.5px; }
+    .score-row { grid-template-columns: 1fr; gap: 4px; }
+    .file-grid, .option-grid { grid-template-columns: 1fr; }
+    .upsell-hero { padding: 32px 24px; }
+    .upsell-bullets { grid-template-columns: 1fr; gap: 18px; padding: 20px 0; }
+    .rate-limit-screen { padding: 40px 24px; }
+    .rate-limit-options { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">BUILD ROOM <span>·</span> KILL FILTER</div>
+  <div class="quota">
+    <div class="quota-item" id="quota-display">
+      <span class="quota-dot" id="quota-dot"></span>
+      <span id="quota-text">day 1/1 · week 1/5</span>
+    </div>
+    <div class="demo-toggle">
+      <button id="mode-fresh" class="active">Fresh user</button>
+      <button id="mode-limited">Out of runs</button>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+
+  <!-- HEADER -->
+  <div class="header" id="header">
+    <div class="stage-tag">Stage 01 · Ideate</div>
+    <h1>Score your idea<br><em>before</em> you build it.</h1>
+    <p class="subtitle">Most AI tells you yes. The Kill Filter is built to say no. Paste an idea, watch it get scored against five criteria, get a verdict in under 60 seconds.</p>
+  </div>
+
+  <!-- PRESETS -->
+  <div class="presets" id="presets">
+    <div class="presets-label">Try a preset · or paste your own below</div>
+    <div class="preset-row">
+      <button class="preset" data-preset="journal">
+        <span class="label">AI-powered journal app</span>
+        <span class="meta">consumer · likely kill</span>
+      </button>
+      <button class="preset" data-preset="adhd">
+        <span class="label">Habit tracker for ADHD adults</span>
+        <span class="meta">consumer · borderline</span>
+      </button>
+      <button class="preset" data-preset="invoicer">
+        <span class="label">Invoicer for freelance designers</span>
+        <span class="meta">b2b · likely keep</span>
+      </button>
+      <button class="preset surprise" data-preset="random">
+        ▸ Surprise me — pull a random idea
+      </button>
+    </div>
+  </div>
+
+  <!-- TERMINAL -->
+  <div class="terminal" id="terminal-wrapper">
+    <div class="terminal-chrome">
+      <div class="terminal-dots">
+        <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+      </div>
+      <div class="terminal-title">~/buildroom · kill-filter</div>
+    </div>
+
+    <div class="terminal-body">
+      <!-- Idle state -->
+      <div id="state-idle">
+        <div class="prompt-line"><span class="arrow">▸</span> <span class="cmd">kill-filter run</span></div>
+        <div class="comment"># Scores your idea against the 5-criteria rubric.</div>
+
+        <div class="input-helper">
+          <div class="helper-label">▸ Tell us about your idea</div>
+          Fill in the 4 required fields, then run. Specifics earn higher scores — vague answers get capped.
+        </div>
+
+        <div id="refined-banner" class="hidden"></div>
+
+        <div class="input-area">
+          <div class="input-row">
+            <span class="input-prompt">&gt; idea: <span class="req">*</span></span>
+            <input class="input-field required" id="in-idea" placeholder="What does your product actually do? One sentence." />
+          </div>
+          <div class="input-row">
+            <span class="input-prompt">&gt; buyer: <span class="req">*</span></span>
+            <input class="input-field required" id="in-buyer" placeholder="Who specifically pays? Be narrow, not 'everyone'." />
+          </div>
+          <div class="input-row">
+            <span class="input-prompt">&gt; pays for: <span class="req">*</span></span>
+            <input class="input-field required" id="in-pays" placeholder="What are they paying you to do or replace?" />
+          </div>
+          <div class="input-row">
+            <span class="input-prompt">&gt; frequency: <span class="req">*</span></span>
+            <input class="input-field required" id="in-freq" placeholder="Monthly subscription? One-time? Annual?" />
+          </div>
+          <div class="input-row">
+            <span class="input-prompt optional">&gt; you:</span>
+            <input class="input-field" id="in-context" placeholder="Why you, not someone else? (optional but helps)" />
+          </div>
+        </div>
+
+        <div class="run-row">
+          <button class="run-btn" id="run-btn" disabled>▸ Run filter</button>
+          <span class="field-counter" id="field-counter"><strong>0</strong> of 4 required fields</span>
+        </div>
+      </div>
+
+      <!-- Running state -->
+      <div id="state-running" class="hidden">
+        <div class="prompt-line"><span class="arrow">▸</span> <span class="cmd">kill-filter run --idea="<span id="running-idea"></span>"</span></div>
+        <div class="comment" id="loading-msg"># Loading skill v1.0 · rubric · verdict-gate...</div>
+        <div class="comment" id="scoring-msg" style="display:none;"># Scoring against 5 criteria...</div>
+
+        <div class="scoring" id="scoring"></div>
+
+        <div id="verdict-container"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- BREAKOUT -->
+  <div id="breakout-container"></div>
+
+  <!-- RATE LIMIT SCREEN -->
+  <div id="rate-limit-state" class="hidden">
+    <div class="rate-limit-screen">
+      <div class="rate-limit-content">
+        <div class="rate-limit-warning">▸ Out of runs</div>
+        <h2>You've used all 5 runs <em>this week.</em></h2>
+        <p class="lead">The free tier gives you 1 idea per day, capped at 5 per week — enough to score every serious idea you have, scarce enough to make each one count. Resets <strong>Monday at 00:00 UTC.</strong></p>
+
+        <div class="rate-limit-options">
+          <div class="rl-option">
+            <div class="rl-option-label">Option 1</div>
+            <h3>Wait it out</h3>
+            <p>Your runs reset in 4 days. Use the time to clarify the buyer on your last REWORK.</p>
+            <a href="#" class="rl-cta-link">▸ Set a reminder</a>
+          </div>
+          <div class="rl-option featured">
+            <div class="rl-option-label">Option 2 · Build Room</div>
+            <h3>Get unlimited runs + the full kit.</h3>
+            <p>Unlimited Kill Filter runs. Full 10-file blueprints. Wall-Skip Kit. Daily drops. Private chat. The room you actually ship in.</p>
+            <a href="#" class="rl-cta-link">▸ Join Build Room — $9/mo</a>
+          </div>
+        </div>
+
+        <p class="rl-footnote">Cancel in one click · No 12-month lock-in · Payment by Whop</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- BOTTOM CONTROLS -->
+  <div class="controls">
+    <span id="bottom-status">Free Build Room · 1 idea/day · 5/week</span>
+    <button class="reset-btn" id="reset-btn">↺ Reset demo</button>
+  </div>
+
+  <!-- DESIGNER NOTES -->
+  <div class="notes">
+    <h3>Mockup notes for review</h3>
+    <ul>
+      <li><strong>v6 changes:</strong> Click an enhancement card → all 5 form fields pre-fill (not just the idea text). User lands on a fully-filled form ready to run. One click = ready.</li>
+      <li><strong>Why this matters:</strong> in v5, only the idea text pre-filled — the buyer / pays_for / frequency stayed at the killed values, so a quick rerun would kill again for the same reason. In production, the <code>enhancements.md</code> skill returns a full <code>fields</code> object per option (idea, buyer, pays_for, frequency, you/context), so every form field gets the new context.</li>
+      <li><strong>v4–v5 functionality preserved:</strong> Both REWORK and KILL produce <em>enhancements of the user's same idea</em>. REWORK = sharpened. KILL = rebuilt. Same product concept stays in all cases.</li>
+      <li><strong>Inter Tight + Inter + JetBrains Mono</strong> typography per the Build Room brand system (introduced in v5).</li>
+      <li><strong>Three preset paths:</strong> journal → KILL → 3 rebuilt versions. adhd → REWORK → 3 sharpened versions. invoicer → KEEP → 4 file cards + hero upsell.</li>
+      <li><strong>Click any enhancement card</strong> → all fields pre-fill, banner confirms, you can hit Run immediately.</li>
+      <li><strong>Backend note:</strong> Enhancement options are generated live by Claude on a second API call using the new <code>enhancements.md</code> skill module.</li>
+    </ul>
+  </div>
+
+</div>
+
+<script>
+  // ---------------- Preset data ----------------
+  const PRESETS = {
+    journal: {
+      idea: "An AI-powered journaling app that uses sentiment analysis for mental health insights",
+      buyer: "anyone who wants to improve their mental health",
+      pays: "monthly subscription for AI insights",
+      freq: "monthly",
+      context: "I've struggled with anxiety and I think this would have helped me",
+      verdict: "KILL",
+      headline: "No buyer, no edge, and a category that doesn't retain.",
+      scores: [
+        { name: "paying proximity", value: 2, reason: "Your buyer is anyone with a phone — no path to a credit card." },
+        { name: "build scope", value: 8, reason: "Buildable as a wrapper in 30 days; the build isn't the problem." },
+        { name: "validation cost", value: 4, reason: "Hard to test — your buyer is too vague to target an ad at." },
+        { name: "unfair advantage", value: 2, reason: "Personal experience isn't an edge — every founder in this space has it." },
+        { name: "retention shape", value: 4, reason: "Journaling apps churn at 80%+ in 30 days; AI doesn't fix that." }
+      ]
+    },
+    adhd: {
+      idea: "A habit tracker for adults with ADHD using gentle nudges instead of streak gamification",
+      buyer: "adults with ADHD",
+      pays: "monthly subscription for the app",
+      freq: "monthly",
+      context: "I'm in a few ADHD subreddits and existing apps don't work for me",
+      verdict: "REWORK",
+      headline: "Real category, real problem — but you haven't named your edge or your specific buyer.",
+      scores: [
+        { name: "paying proximity", value: 5, reason: "ADHD adults pay for habit apps — but you haven't named which cohort or what they're switching from." },
+        { name: "build scope", value: 8, reason: "Standard tracker + reminders + Stripe — buildable in 30 days." },
+        { name: "validation cost", value: 6, reason: "Reachable through subreddits and ADHD communities, harder to ad-target cleanly." },
+        { name: "unfair advantage", value: 5, reason: "You've lived the problem and lurk in communities — but no audience or distribution edge yet." },
+        { name: "retention shape", value: 7, reason: "Habit apps are weekly-use; gentle-nudges angle could lift retention if it works." }
+      ]
+    },
+    invoicer: {
+      idea: "An invoicing tool for freelance designers with client approval flows and Figma project links",
+      buyer: "freelance designers running solo studios, $50-200k/yr revenue",
+      pays: "monthly subscription, replacing FreshBooks or QuickBooks",
+      freq: "monthly",
+      context: "I'm a freelance designer with a 4k newsletter audience and 8 years in the industry",
+      verdict: "KEEP",
+      headline: "Named buyer, real spend, your audience is your edge — build it.",
+      scores: [
+        { name: "paying proximity", value: 8, reason: "Freelance designers already pay for FreshBooks and Bonsai — buyer is named and spend exists." },
+        { name: "build scope", value: 8, reason: "Invoice + Stripe + Figma OAuth + approval flow — four features, standard stack, 30 days." },
+        { name: "validation cost", value: 8, reason: "Your newsletter alone validates this; Meta and Twitter give cheap top-up traffic." },
+        { name: "unfair advantage", value: 8, reason: "4k newsletter of the exact buyer and 8 years experience — you'll reach them faster than anyone." },
+        { name: "retention shape", value: 8, reason: "Designers invoice every project — recurring workflow, subscription fits." }
+      ]
+    }
+  };
+
+  // ---------- REWORK clarifications (sharpened versions of user's idea) ----------
+  // Each option now carries ALL 5 form fields so a click pre-fills everything.
+  const CLARIFICATIONS = {
+    adhd: [
+      {
+        tag: "Sharper buyer",
+        idea: "A gentle-nudge habit tracker built specifically for adults newly diagnosed with ADHD (post-30 diagnosis cohort) who are rebuilding routines from scratch.",
+        fit: "Best if you've gone through a late-in-life diagnosis or have community access to people who have.",
+        fields: {
+          idea: "A gentle-nudge habit tracker for adults newly diagnosed with ADHD (post-30 diagnosis), rebuilding routines without streak-based shame loops",
+          buyer: "adults diagnosed with ADHD after age 30, in their first 12 months of figuring out routines",
+          pays: "monthly subscription, $12-15/mo, replacing free apps that don't fit their cognitive style",
+          freq: "monthly subscription with weekly active use",
+          context: "you've been through a late-in-life diagnosis yourself, or have community access to people who have"
+        }
+      },
+      {
+        tag: "Sharper edge",
+        idea: "The same gentle-nudge habit tracker, sold to ADHD coaches to assign and monitor with their clients — replacing the streak apps coaches dislike.",
+        fit: "Best if you have access to ADHD coaches, have run a coaching practice, or could pilot with one.",
+        fields: {
+          idea: "A gentle-nudge habit tracker designed for ADHD coaches to assign to clients between sessions, with progress dashboards for the coach",
+          buyer: "ADHD coaches running 1-on-1 client practices, 5-30 active clients",
+          pays: "per-seat subscription, $20-30/coach/mo, replacing pen-and-paper or generic habit apps",
+          freq: "monthly per-seat subscription",
+          context: "you have access to ADHD coaches, have done coaching work yourself, or could pilot with one"
+        }
+      },
+      {
+        tag: "Sharper validation",
+        idea: "A gentle-nudge habit tracker for ADHD adults already paying for Inflow or Numo who churned because streaks made them feel worse.",
+        fit: "Best if you're a paying user of an existing tool and can describe specifically why it stopped working for you.",
+        fields: {
+          idea: "A gentle-nudge habit tracker positioned as the alternative for ADHD adults who tried Inflow or Numo and quit because streak shame made things worse",
+          buyer: "ADHD adults who recently churned from Inflow, Numo, or similar streak-based ADHD apps",
+          pays: "monthly subscription, $9-15/mo, replacing the tool they just left",
+          freq: "monthly subscription",
+          context: "you're a current or recent paying user of one of these tools and can describe exactly why it stopped working"
+        }
+      }
+    ]
+  };
+
+  // ---------- KILL enhancements (same product, replaced buyer/edge/retention) ----------
+  // Each option carries ALL 5 form fields so a click pre-fills everything.
+  const SIBLINGS = {
+    journal: [
+      {
+        tag: "Replace buyer with paying cohort",
+        idea: "An AI-powered reflection tool for therapists to assign between sessions — same sentiment-analysis core, but the therapist is the buyer and the patient sees patterns surface in real sessions.",
+        fit: "Best if you have a relationship with a therapist or have worked adjacent to mental health practitioners.",
+        fields: {
+          idea: "An AI sentiment-analysis reflection tool that therapists assign to clients between sessions; patterns surface in the therapist's dashboard for use in real sessions",
+          buyer: "licensed therapists running solo or small-group practices, 10-40 active clients",
+          pays: "per-seat subscription, $40-60/therapist/mo, replacing manual session notes and homework worksheets",
+          freq: "monthly per-seat subscription",
+          context: "you have a relationship with a therapist, have worked adjacent to mental health, or could pilot with a small practice"
+        }
+      },
+      {
+        tag: "Replace retention loop",
+        idea: "An AI journaling tool deployed inside corporate wellness programs — weekly prompts, sentiment trends shared (anonymized) with HR, framed as a covered employee benefit.",
+        fit: "Best if you've worked in HR or wellness roles and have access to benefit budget owners.",
+        fields: {
+          idea: "An AI journaling tool deployed as a corporate wellness benefit; employees journal weekly, anonymized sentiment trends roll up to HR dashboards",
+          buyer: "HR or wellness leads at companies with 200-2000 employees and existing wellness budgets",
+          pays: "annual contract, $5-10/employee/yr, replacing or augmenting existing wellness platforms",
+          freq: "annual contract billed per-employee",
+          context: "you've worked in HR or DEI roles, or have direct access to benefit budget owners"
+        }
+      },
+      {
+        tag: "Replace buyer with switching cohort",
+        idea: "An AI journaling tool for people in 12-step programs — structured to the steps, sponsor-shareable summaries, sold direct to recovery centers running cohorts.",
+        fit: "Best if you have direct access to a recovery community or treatment center.",
+        fields: {
+          idea: "An AI journaling tool structured around 12-step program work; clients journal against the steps, sponsors get shareable summaries, sold to recovery centers",
+          buyer: "treatment center program directors and recovery community organizers running active 12-step cohorts",
+          pays: "annual program license, $2-5k/center/yr, replacing handwritten step-work and sponsor checkins",
+          freq: "annual license",
+          context: "you have direct access to a recovery community, have been through a program yourself, or have a relationship with a treatment center"
+        }
+      }
+    ]
+  };
+
+  // ---------- File definitions ----------
+  const FILES = [
+    {
+      name: "CLAUDE.md",
+      purpose: "Master agent contract",
+      summary: "The first file Claude Code reads. Locks the product, the buyer, the edge, and the hard rules so the agent never drifts during the build.",
+      includes: ["Product + buyer + pricing model", "Your unfair advantage (one paragraph)", "Hard rules: plan first, one feature at a time, verify before done", "Definition of done for v1"]
+    },
+    {
+      name: "spec.md",
+      purpose: "Four-feature MVP scope",
+      summary: "The four features that ship in v1 — no more. Each with user story, acceptance criteria, and explicit out-of-scope notes.",
+      includes: ["4 features, each fully specified", "User stories per feature", "Acceptance criteria per feature", "Build order (auth first, payments before features 2–4)"]
+    },
+    {
+      name: "stack.md",
+      purpose: "Locked tech stack",
+      summary: "Next.js + Supabase + Stripe + Vercel by default — opinionated picks with starter schema and the three named walls flagged.",
+      includes: ["Stack table with reasoning per layer", "Starting database schema", "Environment variable list", "The three walls + how to skip them"]
+    },
+    {
+      name: "cut-list.md",
+      purpose: "Do-not-build list",
+      summary: "Five to eight features you're probably already imagining. They're cut from v1 on purpose. The reasons are real.",
+      includes: ["Per-cut: why cut + when to revisit", "Pre-cut universal items (team accounts, mobile, white-label)", "Hard rule: do not refactor toward this list", "Revisit after 10 paying users"]
+    }
+  ];
+
+  // ---------------- DOM refs ----------------
+  const $idle = document.getElementById('state-idle');
+  const $running = document.getElementById('state-running');
+  const $runIdea = document.getElementById('running-idea');
+  const $loadingMsg = document.getElementById('loading-msg');
+  const $scoringMsg = document.getElementById('scoring-msg');
+  const $scoring = document.getElementById('scoring');
+  const $verdictContainer = document.getElementById('verdict-container');
+  const $breakoutContainer = document.getElementById('breakout-container');
+  const $runBtn = document.getElementById('run-btn');
+  const $resetBtn = document.getElementById('reset-btn');
+  const $presets = document.getElementById('presets');
+  const $terminalWrapper = document.getElementById('terminal-wrapper');
+  const $rateLimitState = document.getElementById('rate-limit-state');
+  const $modeFresh = document.getElementById('mode-fresh');
+  const $modeLimited = document.getElementById('mode-limited');
+  const $quotaDot = document.getElementById('quota-dot');
+  const $quotaText = document.getElementById('quota-text');
+  const $bottomStatus = document.getElementById('bottom-status');
+  const $header = document.getElementById('header');
+  const $fieldCounter = document.getElementById('field-counter');
+  const $refinedBanner = document.getElementById('refined-banner');
+
+  const inputs = {
+    idea: document.getElementById('in-idea'),
+    buyer: document.getElementById('in-buyer'),
+    pays: document.getElementById('in-pays'),
+    freq: document.getElementById('in-freq'),
+    context: document.getElementById('in-context')
+  };
+
+  // ---------------- Input validation (light touch) ----------------
+  function updateFieldState() {
+    const required = ['idea', 'buyer', 'pays', 'freq'];
+    let filled = 0;
+    required.forEach(k => {
+      const val = inputs[k].value.trim();
+      if (val) {
+        filled++;
+        inputs[k].classList.add('filled');
+      } else {
+        inputs[k].classList.remove('filled');
+      }
+    });
+    $fieldCounter.innerHTML = `<strong>${filled}</strong> of 4 required fields`;
+    if (filled === 4) {
+      $fieldCounter.classList.add('complete');
+      $runBtn.disabled = false;
+    } else {
+      $fieldCounter.classList.remove('complete');
+      $runBtn.disabled = true;
+    }
+  }
+
+  Object.values(inputs).forEach(input => {
+    input.addEventListener('input', updateFieldState);
+  });
+
+  // ---------------- Mode toggle ----------------
+  $modeFresh.addEventListener('click', () => setMode('fresh'));
+  $modeLimited.addEventListener('click', () => setMode('limited'));
+
+  function setMode(mode) {
+    if (mode === 'fresh') {
+      $modeFresh.classList.add('active');
+      $modeLimited.classList.remove('active');
+      $rateLimitState.classList.add('hidden');
+      $terminalWrapper.classList.remove('hidden');
+      $presets.classList.remove('hidden');
+      $header.classList.remove('hidden');
+      $quotaDot.classList.remove('warning');
+      $quotaText.textContent = 'day 1/1 · week 1/5';
+      $bottomStatus.textContent = 'Free Build Room · 1 idea/day · 5/week';
+      resetTerminal();
+      // Auto-focus idea field
+      setTimeout(() => inputs.idea.focus(), 100);
+    } else {
+      $modeLimited.classList.add('active');
+      $modeFresh.classList.remove('active');
+      $rateLimitState.classList.remove('hidden');
+      $terminalWrapper.classList.add('hidden');
+      $presets.classList.add('hidden');
+      $header.classList.add('hidden');
+      $quotaDot.classList.add('warning');
+      $quotaText.textContent = 'day 0/1 · week 0/5';
+      $bottomStatus.textContent = 'Free Build Room · out of runs · resets Monday';
+      $breakoutContainer.innerHTML = '';
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }
+
+  // ---------------- Preset wiring ----------------
+  document.querySelectorAll('.preset').forEach(btn => {
+    btn.addEventListener('click', () => {
+      let key = btn.dataset.preset;
+      if (key === 'random') {
+        const pool = ['journal', 'adhd', 'invoicer'];
+        key = pool[Math.floor(Math.random() * pool.length)];
+      }
+      const p = PRESETS[key];
+      inputs.idea.value = p.idea;
+      inputs.buyer.value = p.buyer;
+      inputs.pays.value = p.pays;
+      inputs.freq.value = p.freq;
+      inputs.context.value = p.context;
+      inputs.idea.dataset.presetKey = key;
+      $refinedBanner.classList.add('hidden');
+      updateFieldState();
+      $terminalWrapper.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
+
+  // ---------------- Run filter ----------------
+  $runBtn.addEventListener('click', () => {
+    if ($runBtn.disabled) return;
+    runFilter();
+  });
+
+  function runFilter() {
+    let key = inputs.idea.dataset.presetKey;
+    const match = Object.keys(PRESETS).find(k => PRESETS[k].idea === inputs.idea.value.trim());
+    key = match || key || ['journal', 'adhd', 'invoicer'][Math.floor(Math.random() * 3)];
+    const data = PRESETS[key];
+
+    $idle.classList.add('hidden');
+    $running.classList.remove('hidden');
+    $runIdea.textContent = data.idea.length > 50 ? data.idea.slice(0, 50) + '...' : data.idea;
+
+    $scoring.innerHTML = '';
+    $verdictContainer.innerHTML = '';
+    $breakoutContainer.innerHTML = '';
+    $scoringMsg.style.display = 'none';
+    $loadingMsg.style.display = '';
+
+    setTimeout(() => {
+      $scoringMsg.style.display = '';
+      data.scores.forEach((s, i) => streamScore(s, i));
+      const verdictDelay = 400 + (data.scores.length * 350) + 200;
+      setTimeout(() => renderVerdict(data, key), verdictDelay);
+    }, 700);
+  }
+
+  function streamScore(s, i) {
+    const tier = s.value <= 4 ? 'low' : (s.value <= 6 ? 'mid' : 'high');
+    const fillPct = s.value / 10;
+    const row = document.createElement('div');
+    row.className = `score-row ${tier}`;
+    row.style.animationDelay = `${i * 350 + 200}ms`;
+    row.innerHTML = `
+      <div class="crit-name">${s.name}</div>
+      <div class="bar-track">
+        <div class="bar-fill" style="--fill: ${fillPct}; animation-delay: ${i * 350 + 400}ms;"></div>
+      </div>
+      <div class="reason">${s.reason}</div>
+      <div class="score">${s.value}/10</div>
+    `;
+    $scoring.appendChild(row);
+  }
+
+  function renderVerdict(data, key) {
+    const v = data.verdict.toLowerCase();
+    $verdictContainer.innerHTML = `
+      <div class="verdict-block ${v}">
+        <div class="verdict-label">Verdict</div>
+        <div class="verdict-headline">
+          <span class="v ${v}">${data.verdict}</span>
+          ${data.headline}
+        </div>
+        ${v === 'rework' ? '<div class="verdict-sub">Your idea has bones — but it\'s not specific enough to score well. We\'ve sharpened it three ways below. Pick the version closest to your actual situation, edit if needed, and rerun.</div>' : ''}
+        ${v === 'kill' ? '<div class="verdict-sub">This exact framing won\'t work — but the product concept might. We\'ve rebuilt it three ways around the broken criterion. Same idea, replaced buyer.</div>' : ''}
+      </div>
+    `;
+
+    setTimeout(() => {
+      if (v === 'keep') renderKeepBreakout(data);
+      else if (v === 'rework') renderReworkBreakout(data, key);
+      else if (v === 'kill') renderKillBreakout(data, key);
+    }, 400);
+  }
+
+  // ---------- REWORK breakout ----------
+  function renderReworkBreakout(data, key) {
+    const options = CLARIFICATIONS[key] || CLARIFICATIONS.adhd;
+    const cardsHTML = options.map((o, i) => `
+      <div class="option-card" style="animation-delay: ${i * 150 + 200}ms;" data-option-idx="${i}" data-source="${key}" data-mode="clarification">
+        <div class="opt-num">0${i+1} / 03</div>
+        <span class="opt-tag">${o.tag}</span>
+        <p class="opt-idea">${o.idea}</p>
+        <div class="opt-fit">
+          <strong>Best fit</strong>
+          ${o.fit}
+        </div>
+        <button class="opt-cta">▸ Use this version</button>
+      </div>
+    `).join('');
+
+    $breakoutContainer.innerHTML = `
+      <div class="breakout">
+        <div class="breakout-header">
+          <div class="breakout-stage">▸ Your idea, sharpened</div>
+          <h2 class="breakout-title">Three <em>sharpened versions</em> of your idea.</h2>
+          <p class="breakout-sub">Same product, same you. We just made the buyer specific enough that the rubric can score it accurately. Pick the one that matches your actual situation — your context is what makes one of these work.</p>
+        </div>
+        <div class="option-grid">${cardsHTML}</div>
+        <div class="soft-footer" style="margin-top: 28px;">
+          <p class="soft-footer-text">None of these match? Workshop your idea with people doing this every day. <strong>Build Room members</strong> spend Friday threads helping each other find the angle.</p>
+          <a href="#" class="soft-cta">→ Join Build Room · $9/mo</a>
+        </div>
+      </div>
+    `;
+
+    wireOptionCards();
+  }
+
+  // ---------- KILL breakout ----------
+  function renderKillBreakout(data, key) {
+    const options = SIBLINGS[key] || SIBLINGS.journal;
+    const cardsHTML = options.map((o, i) => `
+      <div class="option-card" style="animation-delay: ${i * 150 + 200}ms;" data-option-idx="${i}" data-source="${key}" data-mode="sibling">
+        <div class="opt-num">0${i+1} / 03</div>
+        <span class="opt-tag">${o.tag}</span>
+        <p class="opt-idea">${o.idea}</p>
+        <div class="opt-fit">
+          <strong>Best fit</strong>
+          ${o.fit}
+        </div>
+        <button class="opt-cta">▸ Use this version</button>
+      </div>
+    `).join('');
+
+    $breakoutContainer.innerHTML = `
+      <div class="breakout">
+        <div class="breakout-header">
+          <div class="breakout-stage">▸ Same idea, rebuilt</div>
+          <h2 class="breakout-title">Three <em>rebuilt versions</em> of your idea.</h2>
+          <p class="breakout-sub">Same product concept — we just replaced the criterion that broke the verdict. The product stays yours; the buyer (or edge, or retention loop) gets swapped for one that actually pays. Pick the version that matches your real situation.</p>
+        </div>
+        <div class="option-grid">${cardsHTML}</div>
+        <div class="soft-footer" style="margin-top: 28px;">
+          <p class="soft-footer-text">None of these match your situation? <strong>Build Room members</strong> workshop hard kills like this in the Friday thread — and 50+ pre-built blueprints are waiting if you want a fresh start instead.</p>
+          <a href="#" class="soft-cta">→ Join Build Room · $9/mo</a>
+        </div>
+      </div>
+    `;
+
+    wireOptionCards();
+  }
+
+  function wireOptionCards() {
+    document.querySelectorAll('.option-card').forEach(card => {
+      card.addEventListener('click', () => {
+        const idx = parseInt(card.dataset.optionIdx);
+        const source = card.dataset.source;
+        const mode = card.dataset.mode;
+        const pool = mode === 'clarification' ? CLARIFICATIONS[source] : SIBLINGS[source];
+        const opt = pool[idx];
+
+        // Pre-fill ALL 5 fields from the enhancement (one-click ready-to-run).
+        // The skill output includes a `fields` object so every form field gets
+        // the new context, not just the idea description.
+        if (opt.fields) {
+          inputs.idea.value = opt.fields.idea;
+          inputs.buyer.value = opt.fields.buyer;
+          inputs.pays.value = opt.fields.pays;
+          inputs.freq.value = opt.fields.freq;
+          inputs.context.value = opt.fields.context;
+        } else {
+          // Fallback: only pre-fill the idea text
+          inputs.idea.value = opt.idea;
+        }
+        inputs.idea.dataset.presetKey = '';
+
+        // Show the "refined idea" banner
+        $refinedBanner.classList.remove('hidden');
+        $refinedBanner.innerHTML = `
+          <span class="check">✓</span>
+          <div>
+            <span class="refined-banner-label">Idea ${mode === 'clarification' ? 'sharpened' : 'rebuilt'} · ready to run</span>
+            <div style="margin-top: 2px;">All fields pre-filled. Edit anything you want, then run. No daily run consumed if you rerun within 7 days.</div>
+          </div>
+        `;
+
+        // Reset to idle state
+        $idle.classList.remove('hidden');
+        $running.classList.add('hidden');
+        $breakoutContainer.innerHTML = '';
+
+        updateFieldState();
+        $terminalWrapper.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        setTimeout(() => inputs.idea.focus(), 400);
+      });
+    });
+  }
+
+  // ---------- KEEP breakout ----------
+  function renderKeepBreakout(data) {
+    const fileCardsHTML = FILES.map((f, i) => `
+      <div class="file-card" style="animation-delay: ${i * 120 + 200}ms;">
+        <div class="file-card-head">
+          <div class="file-name"><span class="check">✓</span> ${f.name}</div>
+          <div class="file-actions">
+            <a href="#">Copy</a>
+            <a href="#">Download</a>
+          </div>
+        </div>
+        <div class="file-purpose">${f.purpose}</div>
+        <p class="file-summary">${f.summary}</p>
+        <div class="file-includes">
+          <div class="file-includes-label">What's inside</div>
+          <ul>
+            ${f.includes.map(item => `<li>${item}</li>`).join('')}
+          </ul>
+        </div>
+      </div>
+    `).join('');
+
+    $breakoutContainer.innerHTML = `
+      <div class="breakout">
+        <div class="breakout-header">
+          <div class="breakout-stage">▸ Build files generated · 4 of 4</div>
+          <h2 class="breakout-title">Your blueprint, <em>ready to ship.</em></h2>
+        </div>
+
+        <div class="files-intro">
+          <p>Four files, drop them into Cursor or Claude Code and start building. Each one is opinionated, scoped to a 30-day MVP, and ends with the branded footer.</p>
+          <button class="download-all-btn">▾ Download all (.zip)</button>
+        </div>
+
+        <div class="file-grid">${fileCardsHTML}</div>
+
+        <div class="upsell-hero">
+          <div class="upsell-hero-tag">▸ Build Room · $9/mo</div>
+          <h2>You got the <em>skeleton.</em><br>The full build lives inside Build Room.</h2>
+          <p class="lead">These 4 files get you started. The full 10-file blueprint, the Wall-Skip Kit, and 50+ working repos are inside Build Room — alongside the people who are shipping with the same playbook.</p>
+
+          <div class="upsell-bullets">
+            <div class="upsell-bullet">
+              <div class="num">01</div>
+              <h4>Full 10-file blueprint</h4>
+              <p>PRD, research, AGENTS, testing, and 5 more — the full Philly Journal template, generated for your idea.</p>
+            </div>
+            <div class="upsell-bullet">
+              <div class="num">02</div>
+              <h4>Wall-Skip Kit</h4>
+              <p>Auth, Stripe webhooks, deploy. Pre-solved. The three walls that kill 90% of vibe-coded apps.</p>
+            </div>
+            <div class="upsell-bullet">
+              <div class="num">03</div>
+              <h4>The room</h4>
+              <p>50+ blueprint repos, daily drops, private chat, weekly office hours. The room with its lights on.</p>
+            </div>
+          </div>
+
+          <div class="upsell-cta-row">
+            <a href="#" class="upsell-cta">▸ Join Build Room <span class="price">/ $9/mo</span></a>
+            <span class="upsell-secondary">Cancel anytime · No 12-month lock-in</span>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  // ---------------- Reset ----------------
+  function resetTerminal() {
+    $idle.classList.remove('hidden');
+    $running.classList.add('hidden');
+    Object.values(inputs).forEach(i => { i.value = ''; i.classList.remove('filled'); });
+    delete inputs.idea.dataset.presetKey;
+    $refinedBanner.classList.add('hidden');
+    $breakoutContainer.innerHTML = '';
+    updateFieldState();
+  }
+
+  $resetBtn.addEventListener('click', () => {
+    setMode('fresh');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+
+  // Init
+  updateFieldState();
+  setTimeout(() => inputs.idea.focus(), 200);
+</script>
+
+</body>
+</html>
