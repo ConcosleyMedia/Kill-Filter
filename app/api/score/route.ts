@@ -113,10 +113,18 @@ export async function POST(req: NextRequest) {
           // Scoring is structured-extraction shaped — no thinking, low effort.
           thinking: { type: "disabled" },
           output_config: { effort: "low" },
-          // Top-level auto-caching places the marker on the (only) cacheable
-          // block, the ~7500-token system. Repeat calls read at ~0.1× cost.
-          cache_control: { type: "ephemeral" },
-          system: skillBundle,
+          // Anchor the cache breakpoint on the system block so every call
+          // shares the same prefix, regardless of the per-call user message.
+          // Top-level cache_control auto-places on the LAST cacheable block,
+          // which is the (varying) user message — different ideas would miss
+          // the cache.
+          system: [
+            {
+              type: "text",
+              text: skillBundle,
+              cache_control: { type: "ephemeral" },
+            },
+          ],
           messages: [{ role: "user", content: JSON.stringify(normalizedInput) }],
         });
 
