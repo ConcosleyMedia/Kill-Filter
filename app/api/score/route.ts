@@ -45,6 +45,14 @@ interface ParsedScoreOutput {
   headline_reason: string;
 }
 
+// Sonnet sometimes wraps the JSON in ```json``` fences despite the skill's
+// "no markdown" rule. Strip them defensively before JSON.parse.
+function extractJson(text: string): string {
+  const trimmed = text.trim();
+  const fenceMatch = trimmed.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?```\s*$/);
+  return fenceMatch ? fenceMatch[1].trim() : trimmed;
+}
+
 function isParsedScoreOutput(x: unknown): x is ParsedScoreOutput {
   if (!x || typeof x !== "object") return false;
   const o = x as { scores?: unknown; headline_reason?: unknown };
@@ -122,7 +130,7 @@ export async function POST(req: NextRequest) {
 
         let parsed: unknown;
         try {
-          parsed = JSON.parse(textBlock.text);
+          parsed = JSON.parse(extractJson(textBlock.text));
         } catch {
           send("error", {
             message: "invalid_json_from_model",
