@@ -7,6 +7,14 @@ import {
   type Scores,
 } from "@/lib/verdict-gate";
 import { loadScoringBundle, getSkillVersion } from "@/lib/load-skill";
+import { ideaHash, ipHash, normalizeIdea } from "@/lib/normalize";
+import { supabaseConfigured } from "@/lib/supabase";
+import {
+  getPublicQuota,
+  incrementPublicQuota,
+  PUBLIC_DAILY_LIMIT,
+} from "@/lib/rate-limit";
+import { findCachedRun, persistRun } from "@/lib/runs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,6 +23,9 @@ const MODEL = "claude-sonnet-4-6";
 const MAX_TOKENS = 1500;
 const TEMPERATURE = 0.3;
 const PER_CRITERION_DELAY_MS = 250;
+// Cache hits stream the events all at once but the client still wants a
+// brief stagger for the bar-fill animation to register.
+const CACHE_HIT_DELAY_MS = 80;
 
 const client = new Anthropic();
 
@@ -28,16 +39,6 @@ interface ScoreRequest {
 
 function asStr(x: unknown): string {
   return typeof x === "string" ? x.trim() : "";
-}
-
-function normalizeFrequency(input: string): string {
-  const s = input.trim().toLowerCase();
-  if (["annually", "annual", "yearly", "year", "year-long", "annual subscription"].includes(s)) return "yearly";
-  if (["monthly", "month", "subscription", "month-to-month"].includes(s)) return "monthly";
-  if (["once", "one-time", "one_time", "onetime", "single"].includes(s)) return "one_time";
-  if (!s) return "unclear";
-  // Best-effort fallback — let the model see the raw value if we can't bucket it.
-  return s;
 }
 
 interface ParsedScoreOutput {
@@ -67,6 +68,14 @@ function isParsedScoreOutput(x: unknown): x is ParsedScoreOutput {
   return true;
 }
 
+// Pull the client IP from common proxy headers; falls back to "unknown" if
+// nothing's set (e.g., direct localhost calls without forwarded headers).
+function clientIp(req: NextRequest): string {
+  const xff = req.headers.get("x-forwarded-for");
+  if (xff) return xff.split(",")[0].trim();
+  return req.headers.get("x-real-ip") ?? "unknown";
+}
+
 export async function POST(req: NextRequest) {
   let body: ScoreRequest;
   try {
@@ -86,15 +95,57 @@ export async function POST(req: NextRequest) {
   if (!pays_for) return Response.json({ error: "missing_pays_for" }, { status: 400 });
   if (!frequency) return Response.json({ error: "missing_frequency" }, { status: 400 });
 
-  const normalizedInput = {
-    idea,
-    buyer: buyer.toLowerCase(),
-    pays_for: pays_for.toLowerCase(),
-    frequency: normalizeFrequency(frequency),
-    user_context,
-  };
+  const normalized = normalizeIdea({ idea, buyer, pays_for, frequency, user_context });
+  const persistEnabled = supabaseConfigured();
+  const userKey = persistEnabled ? ipHash(clientIp(req)) : "unauthed";
+  const ideaHashValue = ideaHash(normalized);
 
+  // 1. Cache hit short-circuits the whole pipeline. Doesn't consume quota.
+  if (persistEnabled) {
+    const cached = await findCachedRun(userKey, ideaHashValue).catch(() => null);
+    if (cached) {
+      return streamCachedResponse(cached);
+    }
+
+    // 2. No cache hit — check rate limit before spending an Anthropic call.
+    const quota = await getPublicQuota(userKey).catch(() => null);
+    if (quota?.exceeded) {
+      return Response.json(
+        {
+          error: "rate_limited",
+          scope: "daily",
+          limit: PUBLIC_DAILY_LIMIT,
+          used: quota.used,
+          remaining: 0,
+          // The CTA shown in the rate-limit screen.
+          cta: "Free Build Room gets you 5 ideas/week. → $9/mo",
+        },
+        { status: 429 },
+      );
+    }
+  }
+
+  return streamFreshScoring({
+    normalized,
+    userKey,
+    ideaHashValue,
+    persistEnabled,
+  });
+}
+
+// --- streaming helpers ---
+
+interface FreshScoringArgs {
+  normalized: ReturnType<typeof normalizeIdea>;
+  userKey: string;
+  ideaHashValue: string;
+  persistEnabled: boolean;
+}
+
+function streamFreshScoring(args: FreshScoringArgs): Response {
+  const { normalized, userKey, ideaHashValue, persistEnabled } = args;
   const encoder = new TextEncoder();
+
   const sse = new ReadableStream<Uint8Array>({
     async start(controller) {
       const send = (event: string, data: unknown) => {
@@ -110,14 +161,8 @@ export async function POST(req: NextRequest) {
           model: MODEL,
           max_tokens: MAX_TOKENS,
           temperature: TEMPERATURE,
-          // Scoring is structured-extraction shaped — no thinking, low effort.
           thinking: { type: "disabled" },
           output_config: { effort: "low" },
-          // Anchor the cache breakpoint on the system block so every call
-          // shares the same prefix, regardless of the per-call user message.
-          // Top-level cache_control auto-places on the LAST cacheable block,
-          // which is the (varying) user message — different ideas would miss
-          // the cache.
           system: [
             {
               type: "text",
@@ -125,7 +170,7 @@ export async function POST(req: NextRequest) {
               cache_control: { type: "ephemeral" },
             },
           ],
-          messages: [{ role: "user", content: JSON.stringify(normalizedInput) }],
+          messages: [{ role: "user", content: JSON.stringify(normalized) }],
         });
 
         const message = await claudeStream.finalMessage();
@@ -152,20 +197,36 @@ export async function POST(req: NextRequest) {
           return;
         }
 
-        // Stream criterion events with a small stagger to drive the terminal
-        // bar-fill animations on the client.
         for (const c of CRITERIA) {
           const s = parsed.scores[c];
-          send("criterion", {
-            criterion: c,
-            score: s.score,
-            reason: s.reason,
-          });
+          send("criterion", { criterion: c, score: s.score, reason: s.reason });
           await new Promise((r) => setTimeout(r, PER_CRITERION_DELAY_MS));
         }
 
         const result = applyVerdictGate(parsed.scores);
         const headline = computeHeadline(result, parsed.scores, parsed.headline_reason);
+        const skill_version = getSkillVersion();
+
+        let run_id: string;
+        if (persistEnabled) {
+          // Persist BEFORE incrementing the quota: if the insert fails we
+          // don't want to charge the user a daily run.
+          run_id = await persistRun({
+            surface: "public",
+            user_key: userKey,
+            idea_hash: ideaHashValue,
+            idea_normalized: normalized,
+            scores: parsed.scores,
+            verdict: result.verdict,
+            rule: result.rule,
+            total: result.total,
+            headline,
+            skill_version,
+          }).catch(() => crypto.randomUUID());
+          await incrementPublicQuota(userKey).catch(() => 0);
+        } else {
+          run_id = crypto.randomUUID();
+        }
 
         send("verdict", {
           verdict: result.verdict,
@@ -173,10 +234,9 @@ export async function POST(req: NextRequest) {
           total: result.total,
           display_total: result.display_total,
           headline,
-          skill_version: getSkillVersion(),
-          // Persisted run_id will replace this once Supabase lands (step 7).
-          run_id: crypto.randomUUID(),
-          // Surface cache hit/miss so we can verify caching is working in dev.
+          skill_version,
+          run_id,
+          cached: false,
           cache_read_input_tokens: message.usage.cache_read_input_tokens ?? 0,
           cache_creation_input_tokens: message.usage.cache_creation_input_tokens ?? 0,
         });
@@ -184,7 +244,7 @@ export async function POST(req: NextRequest) {
         send("done", {});
       } catch (err) {
         if (err instanceof Anthropic.RateLimitError) {
-          send("error", { message: "rate_limited" });
+          send("error", { message: "anthropic_rate_limited" });
         } else if (err instanceof Anthropic.APIError) {
           send("error", { message: `anthropic_${err.status ?? "error"}` });
         } else {
@@ -196,13 +256,60 @@ export async function POST(req: NextRequest) {
     },
   });
 
-  return new Response(sse, {
-    headers: {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache, no-transform",
-      Connection: "keep-alive",
-      // Disable proxy buffering on Vercel/Nginx so SSE flushes immediately.
-      "X-Accel-Buffering": "no",
+  return new Response(sse, { headers: sseHeaders() });
+}
+
+function streamCachedResponse(
+  cached: Awaited<ReturnType<typeof findCachedRun>>,
+): Response {
+  const encoder = new TextEncoder();
+  const sse = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const send = (event: string, data: unknown) => {
+        controller.enqueue(
+          encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`),
+        );
+      };
+
+      try {
+        if (!cached) {
+          send("error", { message: "cache_miss_after_check" });
+          return;
+        }
+
+        send("cached", { previously_scored_at: cached.created_at });
+
+        for (const c of CRITERIA) {
+          const s = cached.scores[c];
+          send("criterion", { criterion: c, score: s.score, reason: s.reason });
+          await new Promise((r) => setTimeout(r, CACHE_HIT_DELAY_MS));
+        }
+
+        send("verdict", {
+          verdict: cached.verdict,
+          rule: cached.rule,
+          total: cached.total,
+          display_total: cached.total * 2,
+          headline: cached.headline,
+          skill_version: cached.skill_version,
+          run_id: cached.id,
+          cached: true,
+          previously_scored_at: cached.created_at,
+        });
+        send("done", {});
+      } finally {
+        controller.close();
+      }
     },
   });
+  return new Response(sse, { headers: sseHeaders() });
+}
+
+function sseHeaders(): HeadersInit {
+  return {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache, no-transform",
+    Connection: "keep-alive",
+    "X-Accel-Buffering": "no",
+  };
 }

@@ -26,8 +26,17 @@ interface VerdictEvent {
   headline: string;
   skill_version: string;
   run_id: string;
+  cached?: boolean;
+  previously_scored_at?: string;
   cache_read_input_tokens?: number;
   cache_creation_input_tokens?: number;
+}
+
+interface RateLimitInfo {
+  limit: number;
+  used: number;
+  remaining: number;
+  cta: string;
 }
 
 const CRITERION_LABEL: Record<CriterionKey, string> = {
@@ -94,6 +103,8 @@ export default function KillFilterPage() {
   const [criteria, setCriteria] = useState<CriterionEvent[]>([]);
   const [verdict, setVerdict] = useState<VerdictEvent | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [previouslyScoredAt, setPreviouslyScoredAt] = useState<string | null>(null);
+  const [rateLimit, setRateLimit] = useState<RateLimitInfo | null>(null);
 
   const required = [idea, buyer, paysFor, frequency];
   const filledCount = required.filter((v) => v.trim().length > 0).length;
@@ -120,6 +131,8 @@ export default function KillFilterPage() {
     setCriteria([]);
     setVerdict(null);
     setErrorMsg(null);
+    setPreviouslyScoredAt(null);
+    setRateLimit(null);
   };
 
   const runFilter = async () => {
@@ -128,6 +141,8 @@ export default function KillFilterPage() {
     setCriteria([]);
     setVerdict(null);
     setErrorMsg(null);
+    setPreviouslyScoredAt(null);
+    setRateLimit(null);
 
     try {
       const res = await fetch("/api/score", {
@@ -141,6 +156,23 @@ export default function KillFilterPage() {
           user_context: userContext,
         }),
       });
+
+      if (res.status === 429) {
+        const payload = (await res.json().catch(() => null)) as
+          | (RateLimitInfo & { error?: string })
+          | null;
+        if (payload) {
+          setRateLimit({
+            limit: payload.limit,
+            used: payload.used,
+            remaining: payload.remaining,
+            cta: payload.cta,
+          });
+        }
+        setPhase("error");
+        setErrorMsg("rate_limited");
+        return;
+      }
 
       if (!res.ok || !res.body) {
         const err = await res.json().catch(() => ({ error: "request_failed" }));
@@ -179,7 +211,10 @@ export default function KillFilterPage() {
             continue;
           }
 
-          if (event === "criterion") {
+          if (event === "cached") {
+            const p = payload as { previously_scored_at?: string };
+            if (p.previously_scored_at) setPreviouslyScoredAt(p.previously_scored_at);
+          } else if (event === "criterion") {
             setCriteria((prev) => [...prev, payload as CriterionEvent]);
           } else if (event === "verdict") {
             setVerdict(payload as VerdictEvent);
@@ -232,6 +267,8 @@ export default function KillFilterPage() {
               verdict={verdict}
               errorMsg={errorMsg}
               phase={phase}
+              previouslyScoredAt={previouslyScoredAt}
+              rateLimit={rateLimit}
               onReset={reset}
             />
           )}
@@ -456,6 +493,8 @@ function RunningScreen({
   verdict,
   errorMsg,
   phase,
+  previouslyScoredAt,
+  rateLimit,
   onReset,
 }: {
   ideaSnippet: string;
@@ -463,16 +502,43 @@ function RunningScreen({
   verdict: VerdictEvent | null;
   errorMsg: string | null;
   phase: Phase;
+  previouslyScoredAt: string | null;
+  rateLimit: RateLimitInfo | null;
   onReset: () => void;
 }) {
+  // Rate-limit short-circuit: render the CTA screen, not the scoring UI.
+  if (rateLimit) {
+    return <RateLimitScreen rateLimit={rateLimit} onReset={onReset} />;
+  }
+
   const showCursor = phase === "running" && !verdict && !errorMsg;
+  const cachedDate = previouslyScoredAt
+    ? new Date(previouslyScoredAt).toLocaleDateString(undefined, {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      })
+    : null;
+
   return (
     <>
       <PromptLine />
       <div className="text-[#5A5045] italic mt-2">
         {`// running... ${ideaSnippet}`}
       </div>
-      {(criteria.length > 0 || phase !== "idle") && (
+      {previouslyScoredAt && (
+        <div
+          className="mt-3 inline-block px-2.5 py-1 rounded-[2px] font-mono text-[11px] uppercase tracking-[0.08em]"
+          style={{
+            background: "rgba(63, 179, 105, 0.12)",
+            color: "var(--color-keep-bright)",
+            border: "1px solid rgba(63, 179, 105, 0.3)",
+          }}
+        >
+          ✓ Previously scored on {cachedDate} — cached
+        </div>
+      )}
+      {(criteria.length > 0 || phase !== "idle") && !previouslyScoredAt && (
         <div className="text-[#5A5045] italic mt-1">
           {`// scoring against 5 criteria`}
           {showCursor && criteria.length === 0 && <span className="cursor-blink" />}
@@ -487,7 +553,7 @@ function RunningScreen({
 
       {verdict && <VerdictBlock verdict={verdict} />}
 
-      {errorMsg && (
+      {errorMsg && !verdict && (
         <div
           className="mt-6 px-4 py-3 rounded-[3px] text-[12.5px]"
           style={{
@@ -513,6 +579,46 @@ function RunningScreen({
         </div>
       )}
     </>
+  );
+}
+
+function RateLimitScreen({
+  rateLimit,
+  onReset,
+}: {
+  rateLimit: RateLimitInfo;
+  onReset: () => void;
+}) {
+  return (
+    <div className="text-center py-8">
+      <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-[var(--color-accent-warm)] mb-4">
+        Daily limit hit · {rateLimit.used} / {rateLimit.limit}
+      </div>
+      <h2 className="font-display font-bold text-[34px] leading-[1.1] tracking-[-0.025em] text-[var(--color-terminal-text)] mb-3">
+        You&apos;re out of public runs today.
+      </h2>
+      <p className="text-[var(--color-terminal-faint)] text-[14px] leading-[1.5] max-w-[480px] mx-auto mb-7">
+        The public surface is capped at {rateLimit.limit}/day per IP so the brutal honesty
+        stays useful. Resets at UTC midnight.
+      </p>
+      <a
+        href="https://whop.com"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-block bg-[var(--color-accent)] text-white px-7 py-3 rounded-[3px] font-mono text-xs uppercase tracking-[0.1em] font-medium hover:bg-[var(--color-accent-warm)] transition-colors"
+      >
+        {rateLimit.cta} →
+      </a>
+      <div className="mt-7">
+        <button
+          type="button"
+          onClick={onReset}
+          className="bg-transparent border border-[var(--color-terminal-border)] text-[var(--color-terminal-faint)] px-4 py-1.5 rounded-[3px] font-mono text-[11px] uppercase tracking-[0.1em] hover:border-[var(--color-terminal-text)] hover:text-[var(--color-terminal-text)] cursor-pointer transition-colors"
+        >
+          ← Back
+        </button>
+      </div>
+    </div>
   );
 }
 
