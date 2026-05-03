@@ -243,12 +243,16 @@ function streamFreshScoring(args: FreshScoringArgs): Response {
 
         send("done", {});
       } catch (err) {
+        // Log full error server-side (visible in Vercel runtime logs);
+        // never echo raw error messages to the client — Anthropic SDK
+        // header errors include the API key verbatim.
+        console.error("[/api/score] streamFreshScoring failed:", err);
         if (err instanceof Anthropic.RateLimitError) {
           send("error", { message: "anthropic_rate_limited" });
         } else if (err instanceof Anthropic.APIError) {
           send("error", { message: `anthropic_${err.status ?? "error"}` });
         } else {
-          send("error", { message: err instanceof Error ? err.message : "unknown" });
+          send("error", { message: "internal_error" });
         }
       } finally {
         controller.close();
