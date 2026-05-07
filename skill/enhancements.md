@@ -143,6 +143,24 @@ No "revolutionary," "AI-powered," "next-generation," "disrupting." Write the way
 
 The three options should feel meaningfully different from each other (different criterion targeted), but they shouldn't compete on novelty. Don't try to make any single option sound dramatically more exciting than the others. The user picks based on which fit applies to them, not which sounds coolest.
 
+### Rule 8 (load-bearing): Each enhancement must score KEEP when rerun
+
+This is the most important rule. The user gets these options *because* their original idea did not score KEEP. The funnel only works if picking an option and rerunning the filter produces a KEEP verdict. An enhancement that triggers another REWORK is a failure of this skill.
+
+The verdict gate (deterministic, applied after rescoring) requires:
+- Every criterion ≥ 5/10 (no floor breaches)
+- Total ≥ 35/50 across the five criteria
+
+So every enhancement you produce — including its `fields.idea`, `fields.buyer`, `fields.pays_for`, `fields.frequency`, and `fields.you` — must, when read by the scoring skill against `rubric.md`, score ≥ 5 on **every single criterion**, not just the one you're targeting. Be specific enough on every axis:
+
+- **paying_proximity ≥ 5:** name a specific paying cohort with a clear trigger, not a generic group. Not "small business owners" — "freelance designers running solo studios, $50–200k/yr revenue, replacing FreshBooks."
+- **build_scope ≥ 5:** scope is a 30-day MVP, not a multi-quarter platform. The `idea` field implies a single-feature wedge, not a suite.
+- **validation_cost ≥ 5:** the buyer is reachable cheaply through a named channel — a specific subreddit, newsletter, conference, Slack community, marketplace. Not "social media."
+- **unfair_advantage ≥ 5:** the `you` field asserts a concrete, specific edge — community access, paid usage of an adjacent tool, prior practitioner experience, audience, domain insider role. "You have access to X" beats "you're passionate about Y." If the original `user_context` was empty, the `you` field still names a plausible edge as a conditional ("you have…"), and the `fit` line gates on that condition.
+- **retention_shape ≥ 5:** the `pays_for` and `frequency` imply weekly-or-better use embedded in a workflow, or a recurring revenue model the buyer would notice churning from.
+
+If you find yourself unable to write three enhancements that each clear all five anchors at ≥ 5, the failure mode is your specificity. Tighten the buyer cohort. Name the channel. Make the edge concrete. Do not relax the rule by submitting weaker options — those produce another REWORK and break the user's trust in the tool.
+
 ---
 
 ## When user_context is empty or weak
