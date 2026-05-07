@@ -88,8 +88,17 @@ export async function POST(req: NextRequest) {
   let enhancements: Enhancement[];
   try {
     enhancements = await callEnhanceClaude(run);
-  } catch (err) {
-    console.error("[/api/enhance] generation failed:", err);
+  } catch (err: unknown) {
+    const errObj = err as { message?: string; name?: string; status?: number; raw?: string } | null;
+    // Multi-line so Vercel's log column doesn't truncate the useful field.
+    console.error(
+      "[/api/enhance] failed.name:",
+      errObj?.name ?? "no_name",
+      "status:",
+      errObj?.status ?? "no_status",
+    );
+    console.error("[/api/enhance] failed.message:", errObj?.message ?? "no_message");
+    if (errObj?.raw) console.error("[/api/enhance] failed.raw:", errObj.raw.slice(0, 500));
     if (err instanceof Anthropic.RateLimitError) {
       return Response.json({ error: "anthropic_rate_limited" }, { status: 503 });
     }
@@ -153,10 +162,21 @@ async function callEnhanceClaude(
   try {
     parsed = JSON.parse(stripped);
   } catch {
-    throw new Error("invalid_json_from_model");
+    const e = new Error("invalid_json_from_model") as Error & { raw: string };
+    e.raw = raw;
+    throw e;
   }
 
-  return validateEnhancements(parsed);
+  try {
+    return validateEnhancements(parsed);
+  } catch (validationErr) {
+    if (validationErr instanceof Error) {
+      const e = new Error(validationErr.message) as Error & { raw: string };
+      e.raw = stripped;
+      throw e;
+    }
+    throw validationErr;
+  }
 }
 
 function stripFence(text: string): string {
@@ -201,12 +221,17 @@ function validateEnhancements(x: unknown): Enhancement[] {
     });
   }
 
-  // Per the skill's Rule 1: each enhancement must target a different criterion.
-  // If we infer fewer than 3 distinct criteria, the model didn't follow the
-  // rule — surface as an error so the client can retry rather than showing
-  // 3 same-axis options.
+  // Per the skill's Rule 1: each enhancement should target a different
+  // criterion. We try to infer that from the tag, but only log a warning
+  // if it looks off — the inferred criterion is best-effort metadata,
+  // not a hard contract. The skill prompt is the actual enforcer.
   if (seenCriteria.size < 3) {
-    throw new Error("non_distinct_criteria");
+    console.warn(
+      "[/api/enhance] inferred only",
+      seenCriteria.size,
+      "distinct criteria from tags:",
+      out.map((e) => e.tag).join(" | "),
+    );
   }
 
   return out;
