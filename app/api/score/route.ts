@@ -306,12 +306,21 @@ function streamFreshScoring(args: FreshScoringArgs): Response {
             total: result.total,
             headline,
             skill_version,
-          }).catch(() => crypto.randomUUID());
+          }).catch((err) => {
+            console.error("[/api/score] persistRun failed:", err);
+            return crypto.randomUUID();
+          });
           if (countsAgainstQuota) {
             if (surface === "public") {
-              await incrementPublicQuota(userKey).catch(() => 0);
+              await incrementPublicQuota(userKey).catch((err) => {
+                console.error("[/api/score] incrementPublicQuota failed:", err);
+                return 0;
+              });
             } else if (surface === "whop") {
-              await incrementWhopQuota(userKey).catch(() => 0);
+              await incrementWhopQuota(userKey).catch((err) => {
+                console.error("[/api/score] incrementWhopQuota failed:", err);
+                return 0;
+              });
             }
           }
         } else {
