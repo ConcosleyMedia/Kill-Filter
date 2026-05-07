@@ -3,14 +3,16 @@
 // different weakest criteria.
 import Anthropic from "@anthropic-ai/sdk";
 import type { NextRequest } from "next/server";
-import { CRITERIA, type Criterion } from "@/lib/verdict-gate";
-
-type CriterionKey = Criterion;
+import { applyVerdictGate, CRITERIA, type Criterion } from "@/lib/verdict-gate";
 import { loadEnhancementBundle, getSkillVersion } from "@/lib/load-skill";
-import { ipHash } from "@/lib/normalize";
+import { ipHash, type NormalizedIdea } from "@/lib/normalize";
 import { supabaseConfigured } from "@/lib/supabase";
 import { getRunForUser } from "@/lib/runs";
 import { whopConfigured, whopSdk } from "@/lib/whop-sdk";
+import { scoreIdea } from "@/lib/score-idea";
+
+type CriterionKey = Criterion;
+const MAX_GENERATION_ROUNDS = 2;
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -85,38 +87,87 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: "verdict_not_eligible" }, { status: 409 });
   }
 
-  let enhancements: Enhancement[];
-  try {
-    enhancements = await callEnhanceClaude(run);
-  } catch (err: unknown) {
-    const errObj = err as { message?: string; name?: string; status?: number; raw?: string } | null;
-    // Multi-line so Vercel's log column doesn't truncate the useful field.
-    console.error(
-      "[/api/enhance] failed.name:",
-      errObj?.name ?? "no_name",
-      "status:",
-      errObj?.status ?? "no_status",
+  // Generate + KEEP-validate. The funnel only works if every option shown
+  // would clear the verdict gate when the user reruns it. We score each
+  // generated enhancement server-side, filter to KEEP-scoring ones, and
+  // retry generation up to MAX_GENERATION_ROUNDS if we don't have at
+  // least one passing option.
+  const kept: Enhancement[] = [];
+  let lastError: unknown = null;
+  for (let round = 0; round < MAX_GENERATION_ROUNDS; round++) {
+    let candidates: Enhancement[];
+    try {
+      candidates = await callEnhanceClaude(run);
+    } catch (err) {
+      lastError = err;
+      break;
+    }
+
+    const validated = await Promise.all(
+      candidates.map(async (e) => {
+        try {
+          const idea = enhancementAsIdea(e);
+          const scored = await scoreIdea(idea);
+          const gate = applyVerdictGate(scored.scores);
+          return gate.verdict === "KEEP" ? e : null;
+        } catch (err) {
+          console.warn("[/api/enhance] score-validate failed for option:", e.tag, err);
+          return null;
+        }
+      }),
     );
-    console.error("[/api/enhance] failed.message:", errObj?.message ?? "no_message");
-    if (errObj?.raw) console.error("[/api/enhance] failed.raw:", errObj.raw.slice(0, 500));
-    if (err instanceof Anthropic.RateLimitError) {
-      return Response.json({ error: "anthropic_rate_limited" }, { status: 503 });
+    const passing = validated.filter((e): e is Enhancement => e !== null);
+
+    // Avoid duplicating tags across rounds — if round-2 produces an
+    // enhancement targeting the same axis as a round-1 keeper, skip it.
+    for (const e of passing) {
+      if (kept.length >= 3) break;
+      if (!kept.some((k) => k.tag === e.tag)) kept.push(e);
     }
-    if (err instanceof Anthropic.APIError) {
-      return Response.json(
-        { error: `anthropic_${err.status ?? "error"}` },
-        { status: 502 },
+    if (kept.length >= 3) break;
+  }
+
+  if (kept.length === 0) {
+    if (lastError) {
+      const errObj = lastError as { message?: string; name?: string; status?: number; raw?: string } | null;
+      console.error(
+        "[/api/enhance] failed.name:",
+        errObj?.name ?? "no_name",
+        "status:",
+        errObj?.status ?? "no_status",
       );
+      console.error("[/api/enhance] failed.message:", errObj?.message ?? "no_message");
+      if (errObj?.raw) console.error("[/api/enhance] failed.raw:", errObj.raw.slice(0, 500));
+      if (lastError instanceof Anthropic.RateLimitError) {
+        return Response.json({ error: "anthropic_rate_limited" }, { status: 503 });
+      }
+      if (lastError instanceof Anthropic.APIError) {
+        return Response.json(
+          { error: `anthropic_${lastError.status ?? "error"}` },
+          { status: 502 },
+        );
+      }
+      return Response.json({ error: "generation_failed" }, { status: 500 });
     }
-    return Response.json({ error: "generation_failed" }, { status: 500 });
+    return Response.json({ error: "no_keep_options" }, { status: 502 });
   }
 
   return Response.json({
     run_id: runId,
     mode: run.verdict,
-    enhancements,
+    enhancements: kept.slice(0, 3),
     skill_version: getSkillVersion(),
   });
+}
+
+function enhancementAsIdea(e: Enhancement): NormalizedIdea {
+  return {
+    idea: e.fields.idea,
+    buyer: e.fields.buyer,
+    pays_for: e.fields.pays_for,
+    frequency: e.fields.frequency,
+    user_context: e.fields.you,
+  };
 }
 
 async function callEnhanceClaude(

@@ -1,7 +1,6 @@
 // TEMPORARY diagnostic. Reports env var byte-counts and whitespace presence
 // so we can identify corrupted values stored in Vercel without exposing the
 // values themselves. Remove once env config is verified.
-import type { NextRequest } from "next/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
