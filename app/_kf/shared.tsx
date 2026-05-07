@@ -317,7 +317,9 @@ export function Enhancements({
 
   if (status.kind === "loading") {
     return (
-      <EnhanceFrame eyebrow={eyebrow} title="Generating 3 options…" subtitle="Usually under 8 seconds." />
+      <EnhanceFrame eyebrow={eyebrow} title="" subtitle="">
+        <EnhancementProgress />
+      </EnhanceFrame>
     );
   }
 
@@ -354,6 +356,68 @@ export function Enhancements({
   );
 }
 
+// Phased progress while /api/enhance generates + KEEP-validates options.
+// Walks through the actual server stages (generate ~5s, score in parallel
+// ~8s, validate). The bar animates indeterminately because the client
+// can't know exactly where the server is in real time.
+const ENHANCEMENT_PHASES = [
+  { atMs: 0, label: "Generating 3 options…" },
+  { atMs: 5000, label: "Scoring each option against the rubric…" },
+  { atMs: 13000, label: "Validating KEEP candidates…" },
+  { atMs: 22000, label: "Regenerating any that didn't clear…" },
+  { atMs: 32000, label: "Almost there — this run is on the slow side…" },
+] as const;
+const ENHANCEMENT_TOTAL_MS = 28000;
+
+function EnhancementProgress() {
+  const [elapsedMs, setElapsedMs] = useState(0);
+  useEffect(() => {
+    const start = Date.now();
+    const t = setInterval(() => setElapsedMs(Date.now() - start), 250);
+    return () => clearInterval(t);
+  }, []);
+
+  const phase =
+    [...ENHANCEMENT_PHASES].reverse().find((p) => elapsedMs >= p.atMs) ??
+    ENHANCEMENT_PHASES[0];
+  const pct = Math.min(96, (elapsedMs / ENHANCEMENT_TOTAL_MS) * 100);
+
+  return (
+    <div className="py-2">
+      <div className="flex items-center justify-between font-mono text-[12px] text-[var(--color-ink-soft)] mb-2">
+        <span>
+          <span className="text-[var(--color-accent-warm)]">▸</span>{" "}
+          <span className="text-[var(--color-ink)]">{phase.label}</span>
+          <span className="cursor-blink" />
+        </span>
+        <span className="text-[var(--color-ink-faint)] font-mono text-[11px]">
+          {Math.floor(elapsedMs / 1000)}s
+        </span>
+      </div>
+      <div className="h-[4px] bg-black/[0.06] rounded-[1px] overflow-hidden relative">
+        <div
+          className="h-full transition-[width] duration-300 ease-out"
+          style={{
+            width: `${pct}%`,
+            background: "var(--color-accent-warm)",
+          }}
+        />
+        <div
+          className="absolute inset-0"
+          style={{
+            background:
+              "linear-gradient(90deg, transparent 0%, rgba(232,93,44,0.3) 50%, transparent 100%)",
+            animation: "scoreShimmer 1.6s ease-in-out infinite",
+          }}
+        />
+      </div>
+      <div className="mt-2 font-mono text-[11px] text-[var(--color-ink-faint)]">
+        Each option is rerun-tested to make sure it would score KEEP.
+      </div>
+    </div>
+  );
+}
+
 function EnhanceFrame({
   eyebrow,
   title,
@@ -376,13 +440,15 @@ function EnhanceFrame({
       <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-[var(--color-accent-warm)] mb-1.5">
         {eyebrow}
       </div>
-      <div className="font-display font-bold text-[18px] leading-[1.25] tracking-[-0.015em] text-[var(--color-ink)] mb-1">
-        {title}
-      </div>
+      {title && (
+        <div className="font-display font-bold text-[18px] leading-[1.25] tracking-[-0.015em] text-[var(--color-ink)] mb-1">
+          {title}
+        </div>
+      )}
       {subtitle && (
         <div className="text-[13px] text-[var(--color-ink-soft)] mb-4">{subtitle}</div>
       )}
-      <div className="mt-4">{children}</div>
+      <div className={title || subtitle ? "mt-4" : "mt-2"}>{children}</div>
     </div>
   );
 }
