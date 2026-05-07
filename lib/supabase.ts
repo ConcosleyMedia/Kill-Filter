@@ -6,10 +6,19 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 let cached: SupabaseClient | null = null;
 
+// Strips ALL whitespace from a string. JWTs and URLs must be a single
+// continuous token — line wraps from accidental multi-line paste in
+// Vercel/dotenv would otherwise produce headers undici rejects with
+// "invalid header value".
+function clean(s: string | undefined): string | undefined {
+  if (!s) return s;
+  return s.replace(/\s+/g, "");
+}
+
 export function supabase(): SupabaseClient {
   if (cached) return cached;
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const url = clean(process.env.NEXT_PUBLIC_SUPABASE_URL);
+  const key = clean(process.env.SUPABASE_SERVICE_ROLE_KEY);
   if (!url || !key) {
     throw new Error(
       "supabase: NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must both be set",
