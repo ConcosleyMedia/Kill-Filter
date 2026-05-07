@@ -17,6 +17,24 @@ import {
   getSkillVersion,
 } from "@/lib/load-skill";
 import { supabaseConfigured } from "@/lib/supabase";
+import { ipHash } from "@/lib/normalize";
+
+function clientIp(req: NextRequest): string {
+  const xff = req.headers.get("x-forwarded-for");
+  if (xff) return xff.split(",")[0].trim();
+  return req.headers.get("x-real-ip") ?? "unknown";
+}
+
+async function detectWhopUser(req: NextRequest): Promise<string | null> {
+  if (!req.headers.get("x-whop-user-token")) return null;
+  if (!whopConfigured()) return null;
+  try {
+    const { userId } = await whopSdk().verifyUserToken(req.headers);
+    return userId;
+  } catch {
+    return null;
+  }
+}
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -104,18 +122,8 @@ interface RequestBody {
 }
 
 export async function POST(req: NextRequest) {
-  if (!whopConfigured()) {
-    return Response.json({ error: "whop_not_configured" }, { status: 503 });
-  }
   if (!supabaseConfigured()) {
     return Response.json({ error: "persistence_not_configured" }, { status: 503 });
-  }
-
-  let userId: string;
-  try {
-    ({ userId } = await whopSdk().verifyUserToken(req.headers));
-  } catch {
-    return Response.json({ error: "unauthorized" }, { status: 401 });
   }
 
   let body: RequestBody;
@@ -129,7 +137,13 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: "missing_run_id" }, { status: 400 });
   }
 
-  const run = await getRunForUser(runId, userId).catch(() => null);
+  // Auth: prefer a verified Whop user token; fall back to ip_hash so the
+  // public-surface KEEP path can also generate files. Both must match the
+  // user_key the run was persisted under.
+  const whopUserId = await detectWhopUser(req);
+  const userKey = whopUserId ?? ipHash(clientIp(req));
+
+  const run = await getRunForUser(runId, userKey).catch(() => null);
   if (!run) {
     return Response.json({ error: "run_not_found" }, { status: 404 });
   }

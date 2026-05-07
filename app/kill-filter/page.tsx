@@ -18,6 +18,7 @@ import {
   type Phase,
   type VerdictEvent,
 } from "../_kf/shared";
+import { KeepFiles } from "../_kf/keep-files";
 
 // CRITERION_LABEL is re-exported above just so this page's surrounding code
 // can stay on the shared constant; no other usage here.
@@ -288,6 +289,8 @@ export default function KillFilterPage() {
             onSelect={applyEnhancement}
           />
         )}
+
+        {verdict?.verdict === "KEEP" && <KeepFiles runId={verdict.run_id} />}
 
         <BottomStatus skillVersion={verdict?.skill_version ?? "1.0"} />
       </div>

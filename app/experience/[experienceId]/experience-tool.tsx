@@ -17,7 +17,7 @@ import {
   type Phase,
   type VerdictEvent,
 } from "../../_kf/shared";
-import { KeepFiles } from "./keep-files";
+import { KeepFiles } from "../../_kf/keep-files";
 
 void CRITERION_LABEL;
 
