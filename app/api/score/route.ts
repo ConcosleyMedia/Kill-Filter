@@ -14,7 +14,10 @@ import {
   incrementPublicQuota,
   PUBLIC_DAILY_LIMIT,
 } from "@/lib/rate-limit";
-import { findCachedRun, persistRun } from "@/lib/runs";
+import { findCachedRun, getRunForUser, persistRun } from "@/lib/runs";
+import { whopConfigured, whopSdk } from "@/lib/whop-sdk";
+
+const REFINEMENT_GRACE_DAYS = 7;
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -35,6 +38,7 @@ interface ScoreRequest {
   pays_for?: unknown;
   frequency?: unknown;
   user_context?: unknown;
+  refinement_of?: unknown;
 }
 
 function asStr(x: unknown): string {
@@ -76,6 +80,20 @@ function clientIp(req: NextRequest): string {
   return req.headers.get("x-real-ip") ?? "unknown";
 }
 
+// Detect a Whop iframe request: the iframe forwards x-whop-user-token on
+// every same-origin fetch. We verify it server-side; success means we're in
+// a paid-context where IP rate limit doesn't apply.
+async function detectWhopUser(req: NextRequest): Promise<string | null> {
+  if (!req.headers.get("x-whop-user-token")) return null;
+  if (!whopConfigured()) return null;
+  try {
+    const { userId } = await whopSdk().verifyUserToken(req.headers);
+    return userId;
+  } catch {
+    return null;
+  }
+}
+
 export async function POST(req: NextRequest) {
   let body: ScoreRequest;
   try {
@@ -89,6 +107,7 @@ export async function POST(req: NextRequest) {
   const pays_for = asStr(body.pays_for);
   const frequency = asStr(body.frequency);
   const user_context = asStr(body.user_context);
+  const refinementOfId = asStr(body.refinement_of);
 
   if (!idea) return Response.json({ error: "missing_idea" }, { status: 400 });
   if (!buyer) return Response.json({ error: "missing_buyer" }, { status: 400 });
@@ -97,8 +116,15 @@ export async function POST(req: NextRequest) {
 
   const normalized = normalizeIdea({ idea, buyer, pays_for, frequency, user_context });
   const persistEnabled = supabaseConfigured();
-  const userKey = persistEnabled ? ipHash(clientIp(req)) : "unauthed";
   const ideaHashValue = ideaHash(normalized);
+
+  // Surface detection: a verified Whop user token bumps us into the whop
+  // surface (per-user cache, no IP rate limit). Otherwise public.
+  const whopUserId = await detectWhopUser(req);
+  const surface: "public" | "whop" = whopUserId ? "whop" : "public";
+  const userKey = persistEnabled
+    ? whopUserId ?? ipHash(clientIp(req))
+    : "unauthed";
 
   // 1. Cache hit short-circuits the whole pipeline. Doesn't consume quota.
   if (persistEnabled) {
@@ -107,22 +133,41 @@ export async function POST(req: NextRequest) {
       return streamCachedResponse(cached);
     }
 
-    // 2. No cache hit — check rate limit before spending an Anthropic call.
-    const quota = await getPublicQuota(userKey).catch(() => null);
-    if (quota?.exceeded) {
-      return Response.json(
-        {
-          error: "rate_limited",
-          scope: "daily",
-          limit: PUBLIC_DAILY_LIMIT,
-          used: quota.used,
-          remaining: 0,
-          // The CTA shown in the rate-limit screen.
-          cta: "Free Build Room gets you 5 ideas/week. → $9/mo",
-        },
-        { status: 429 },
-      );
+    // 2. Refinement grace: if this is a rerun off a parent REWORK/KILL run
+    //    that the same user_key owned within the last 7 days, skip the
+    //    IP rate limit. Server-validated so client can't claim arbitrary IDs.
+    const isRefinement =
+      refinementOfId.length > 0 &&
+      (await isValidRefinement(refinementOfId, userKey));
+
+    // 3. No cache hit — public surface checks IP rate limit unless refinement
+    //    grace applies. Whop surface skips it (Phase 3 will add per-user limits).
+    if (surface === "public" && !isRefinement) {
+      const quota = await getPublicQuota(userKey).catch(() => null);
+      if (quota?.exceeded) {
+        return Response.json(
+          {
+            error: "rate_limited",
+            scope: "daily",
+            limit: PUBLIC_DAILY_LIMIT,
+            used: quota.used,
+            remaining: 0,
+            // The CTA shown in the rate-limit screen.
+            cta: "Free Build Room gets you 5 ideas/week. → $9/mo",
+          },
+          { status: 429 },
+        );
+      }
     }
+
+    return streamFreshScoring({
+      normalized,
+      userKey,
+      ideaHashValue,
+      persistEnabled,
+      surface,
+      countsAgainstQuota: surface === "public" && !isRefinement,
+    });
   }
 
   return streamFreshScoring({
@@ -130,7 +175,20 @@ export async function POST(req: NextRequest) {
     userKey,
     ideaHashValue,
     persistEnabled,
+    surface,
+    countsAgainstQuota: surface === "public",
   });
+}
+
+async function isValidRefinement(
+  parentRunId: string,
+  userKey: string,
+): Promise<boolean> {
+  const parent = await getRunForUser(parentRunId, userKey).catch(() => null);
+  if (!parent) return false;
+  if (parent.verdict !== "REWORK" && parent.verdict !== "KILL") return false;
+  const ageMs = Date.now() - new Date(parent.created_at).getTime();
+  return ageMs <= REFINEMENT_GRACE_DAYS * 24 * 60 * 60 * 1000;
 }
 
 // --- streaming helpers ---
@@ -140,10 +198,12 @@ interface FreshScoringArgs {
   userKey: string;
   ideaHashValue: string;
   persistEnabled: boolean;
+  surface: "public" | "whop";
+  countsAgainstQuota: boolean;
 }
 
 function streamFreshScoring(args: FreshScoringArgs): Response {
-  const { normalized, userKey, ideaHashValue, persistEnabled } = args;
+  const { normalized, userKey, ideaHashValue, persistEnabled, surface, countsAgainstQuota } = args;
   const encoder = new TextEncoder();
 
   const sse = new ReadableStream<Uint8Array>({
@@ -212,7 +272,7 @@ function streamFreshScoring(args: FreshScoringArgs): Response {
           // Persist BEFORE incrementing the quota: if the insert fails we
           // don't want to charge the user a daily run.
           run_id = await persistRun({
-            surface: "public",
+            surface,
             user_key: userKey,
             idea_hash: ideaHashValue,
             idea_normalized: normalized,
@@ -223,7 +283,9 @@ function streamFreshScoring(args: FreshScoringArgs): Response {
             headline,
             skill_version,
           }).catch(() => crypto.randomUUID());
-          await incrementPublicQuota(userKey).catch(() => 0);
+          if (countsAgainstQuota) {
+            await incrementPublicQuota(userKey).catch(() => 0);
+          }
         } else {
           run_id = crypto.randomUUID();
         }

@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import {
-  BUILD_ROOM_URL,
   CRITERION_LABEL,
   Enhancements,
   InputRow,
@@ -16,59 +15,17 @@ import {
   type Frequency,
   type Phase,
   type VerdictEvent,
-} from "../_kf/shared";
+} from "../../_kf/shared";
+import { KeepFiles } from "./keep-files";
 
-// CRITERION_LABEL is re-exported above just so this page's surrounding code
-// can stay on the shared constant; no other usage here.
 void CRITERION_LABEL;
 
-interface RateLimitInfo {
-  limit: number;
-  used: number;
-  remaining: number;
-  cta: string;
+interface ExperienceToolProps {
+  userId: string;
+  accessLevel: string;
 }
 
-const PRESETS = [
-  {
-    key: "journal",
-    label: "AI journaling app",
-    meta: "expected: kill",
-    fields: {
-      idea: "An AI-powered journaling app that uses sentiment analysis to give you mental health insights.",
-      buyer: "anyone who wants to improve their mental health",
-      pays_for: "monthly subscription for AI insights",
-      frequency: "monthly" as Frequency,
-      user_context: "I've struggled with anxiety and I think this would have helped me",
-    },
-  },
-  {
-    key: "adhd",
-    label: "ADHD habit tracker",
-    meta: "expected: rework",
-    fields: {
-      idea: "A habit tracker for adults with ADHD using gentle nudges instead of streak gamification.",
-      buyer: "adults with ADHD",
-      pays_for: "monthly subscription for the app",
-      frequency: "monthly" as Frequency,
-      user_context: "I'm in a few ADHD subreddits and existing apps don't work for me",
-    },
-  },
-  {
-    key: "invoicer",
-    label: "Designer invoicing tool",
-    meta: "expected: keep",
-    fields: {
-      idea: "An invoicing tool for freelance designers with client approval flows and Figma project links.",
-      buyer: "freelance designers running solo studios, $50-200k/yr revenue",
-      pays_for: "monthly subscription, replacing FreshBooks or QuickBooks",
-      frequency: "monthly" as Frequency,
-      user_context: "I'm a freelance designer with a 4k newsletter audience and 8 years in the industry",
-    },
-  },
-] as const;
-
-export default function KillFilterPage() {
+export function ExperienceTool({ userId, accessLevel }: ExperienceToolProps) {
   const [idea, setIdea] = useState("");
   const [buyer, setBuyer] = useState("");
   const [paysFor, setPaysFor] = useState("");
@@ -80,7 +37,6 @@ export default function KillFilterPage() {
   const [verdict, setVerdict] = useState<VerdictEvent | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [previouslyScoredAt, setPreviouslyScoredAt] = useState<string | null>(null);
-  const [rateLimit, setRateLimit] = useState<RateLimitInfo | null>(null);
   const [refinementOf, setRefinementOf] = useState<
     { parentRunId: string; mode: "REWORK" | "KILL" } | null
   >(null);
@@ -90,28 +46,12 @@ export default function KillFilterPage() {
   const ready = filledCount === 4;
   const ideaSnippet = idea.length > 60 ? idea.slice(0, 60) + "..." : idea;
 
-  const applyPreset = (key: string) => {
-    const p = PRESETS.find((x) => x.key === key);
-    if (!p) return;
-    setIdea(p.fields.idea);
-    setBuyer(p.fields.buyer);
-    setPaysFor(p.fields.pays_for);
-    setFrequency(p.fields.frequency);
-    setUserContext(p.fields.user_context);
-  };
-
-  const surprise = () => {
-    const k = PRESETS[Math.floor(Math.random() * PRESETS.length)].key;
-    applyPreset(k);
-  };
-
   const reset = () => {
     setPhase("idle");
     setCriteria([]);
     setVerdict(null);
     setErrorMsg(null);
     setPreviouslyScoredAt(null);
-    setRateLimit(null);
     setRefinementOf(null);
   };
 
@@ -126,7 +66,6 @@ export default function KillFilterPage() {
     setVerdict(null);
     setErrorMsg(null);
     setPreviouslyScoredAt(null);
-    setRateLimit(null);
     const mode: "REWORK" | "KILL" =
       verdict?.verdict === "KILL" ? "KILL" : "REWORK";
     setRefinementOf({ parentRunId, mode });
@@ -140,7 +79,6 @@ export default function KillFilterPage() {
     setVerdict(null);
     setErrorMsg(null);
     setPreviouslyScoredAt(null);
-    setRateLimit(null);
 
     try {
       const res = await fetch("/api/score", {
@@ -155,23 +93,6 @@ export default function KillFilterPage() {
           refinement_of: refinementOf?.parentRunId ?? undefined,
         }),
       });
-
-      if (res.status === 429) {
-        const payload = (await res.json().catch(() => null)) as
-          | (RateLimitInfo & { error?: string })
-          | null;
-        if (payload) {
-          setRateLimit({
-            limit: payload.limit,
-            used: payload.used,
-            remaining: payload.remaining,
-            cta: payload.cta,
-          });
-        }
-        setPhase("error");
-        setErrorMsg("rate_limited");
-        return;
-      }
 
       if (!res.ok || !res.body) {
         const err = await res.json().catch(() => ({ error: "request_failed" }));
@@ -232,14 +153,10 @@ export default function KillFilterPage() {
 
   return (
     <div className="min-h-screen">
-      <TopBar />
+      <TopBar accessLevel={accessLevel} />
 
-      <div className="max-w-[1080px] mx-auto px-8 pt-12 pb-20">
-        <Header />
-
-        {phase === "idle" && (
-          <Presets onPick={applyPreset} onSurprise={surprise} />
-        )}
+      <div className="max-w-[1080px] mx-auto px-8 pt-8 pb-20">
+        <Header userId={userId} />
 
         <Terminal>
           {phase === "idle" ? (
@@ -274,7 +191,6 @@ export default function KillFilterPage() {
               errorMsg={errorMsg}
               phase={phase}
               previouslyScoredAt={previouslyScoredAt}
-              rateLimit={rateLimit}
               onReset={reset}
             />
           )}
@@ -288,18 +204,20 @@ export default function KillFilterPage() {
           />
         )}
 
+        {verdict?.verdict === "KEEP" && (
+          <KeepFiles runId={verdict.run_id} />
+        )}
+
         <BottomStatus skillVersion={verdict?.skill_version ?? "1.0"} />
       </div>
     </div>
   );
 }
 
-/* ---------- Subcomponents ---------- */
-
-function TopBar() {
+function TopBar({ accessLevel }: { accessLevel: string }) {
   return (
     <div
-      className="sticky top-0 z-10 border-b border-[var(--color-rule)] bg-[var(--color-bg)]
+      className="border-b border-[var(--color-rule)] bg-[var(--color-bg)]
                  px-8 py-3.5 flex justify-between items-center font-mono text-[11px]
                  uppercase tracking-[0.08em] text-[var(--color-ink-faint)]"
     >
@@ -309,81 +227,31 @@ function TopBar() {
       <div className="flex gap-4 items-center">
         <span className="flex gap-1.5 items-center">
           <span className="w-1.5 h-1.5 bg-[var(--color-keep)] rounded-full" />
-          public · 3 of 3 today
+          whop · {accessLevel}
         </span>
       </div>
     </div>
   );
 }
 
-function Header() {
+function Header({ userId }: { userId: string }) {
   return (
-    <header className="mb-9">
+    <header className="mb-7">
       <span
         className="inline-block px-3 py-[5px] mb-4 rounded-[2px] font-mono text-[11px]
                    uppercase tracking-[0.1em] text-[var(--color-accent)]
                    bg-[rgba(221,51,0,0.1)] border border-[rgba(221,51,0,0.25)]"
       >
-        v1 · public preview
+        Build Room · member surface
       </span>
-      <h1 className="font-display font-extrabold text-[clamp(40px,5.5vw,64px)] leading-[0.95] tracking-[-0.035em] mb-4 text-[var(--color-ink)]">
-        Most AI tells you yes.
-        <br />
-        <em className="font-extrabold text-[var(--color-accent)] italic">
-          The Kill Filter
-        </em>{" "}
-        is built to say no.
+      <h1 className="font-display font-extrabold text-[clamp(32px,4.5vw,48px)] leading-[0.98] tracking-[-0.03em] mb-3 text-[var(--color-ink)]">
+        Score it. Keep, rework, or kill.
       </h1>
-      <p className="text-[17px] leading-[1.5] text-[var(--color-ink-soft)] max-w-[580px]">
-        Score your idea against 5 criteria. Get a verdict in under a minute.
-        Three outcomes: <strong>kill it</strong>, <strong>rework it</strong>,
-        or <strong>keep building</strong>.
+      <p className="text-[15px] leading-[1.5] text-[var(--color-ink-soft)] max-w-[600px]">
+        On KEEP you get the four starter files for your build. Signed in as{" "}
+        <code className="font-mono text-[12.5px] text-[var(--color-ink)]">{userId}</code>.
       </p>
     </header>
-  );
-}
-
-function Presets({
-  onPick,
-  onSurprise,
-}: {
-  onPick: (key: string) => void;
-  onSurprise: () => void;
-}) {
-  return (
-    <div className="my-9 mb-7">
-      <div className="font-mono text-[11px] uppercase tracking-[0.1em] text-[var(--color-ink-faint)] mb-3.5 flex items-center gap-3">
-        <span>Starter ideas</span>
-        <span className="flex-1 h-px bg-[var(--color-rule)]" />
-      </div>
-      <div className="grid grid-cols-3 gap-2.5">
-        {PRESETS.map((p) => (
-          <button
-            key={p.key}
-            type="button"
-            onClick={() => onPick(p.key)}
-            className="bg-transparent border border-[var(--color-rule)] px-4 py-3.5 text-left
-                       font-mono text-[13px] text-[var(--color-ink)] rounded-[2px] transition-all
-                       hover:border-[var(--color-ink)] hover:bg-black/[0.04] hover:-translate-y-px
-                       cursor-pointer"
-          >
-            <span className="block font-medium leading-[1.4]">{p.label}</span>
-            <span className="block font-mono text-[10px] text-[var(--color-ink-faint)] uppercase tracking-[0.06em] mt-1.5">
-              {p.meta}
-            </span>
-          </button>
-        ))}
-        <button
-          type="button"
-          onClick={onSurprise}
-          className="col-span-3 bg-[var(--color-ink)] text-[var(--color-bg)] border border-[var(--color-ink)]
-                     py-3 text-center font-mono text-xs uppercase tracking-[0.1em] rounded-[2px] transition-colors
-                     hover:bg-[var(--color-accent)] hover:border-[var(--color-accent)] cursor-pointer"
-        >
-          Surprise me →
-        </button>
-      </div>
-    </div>
   );
 }
 
@@ -420,7 +288,7 @@ function IdleScreen({
 }) {
   return (
     <>
-      <PromptLine surface="public" />
+      <PromptLine surface="whop" />
 
       {refinementBanner}
 
@@ -434,7 +302,7 @@ function IdleScreen({
         <span className="text-[var(--color-accent-warm)] uppercase tracking-[0.1em] text-[10px] font-semibold block mb-0.5">
           Required fields
         </span>
-        Specific buyer + clear pricing model = better signal. Vague inputs cap your scores.
+        Specific buyer + clear pricing model = better signal. KEEP unlocks the four-file blueprint.
       </div>
 
       <div className="mt-3 flex flex-col gap-3">
@@ -476,7 +344,6 @@ function RunningScreen({
   errorMsg,
   phase,
   previouslyScoredAt,
-  rateLimit,
   onReset,
 }: {
   ideaSnippet: string;
@@ -485,13 +352,8 @@ function RunningScreen({
   errorMsg: string | null;
   phase: Phase;
   previouslyScoredAt: string | null;
-  rateLimit: RateLimitInfo | null;
   onReset: () => void;
 }) {
-  if (rateLimit) {
-    return <RateLimitScreen rateLimit={rateLimit} onReset={onReset} />;
-  }
-
   const showCursor = phase === "running" && !verdict && !errorMsg;
   const cachedDate = previouslyScoredAt
     ? new Date(previouslyScoredAt).toLocaleDateString(undefined, {
@@ -503,7 +365,7 @@ function RunningScreen({
 
   return (
     <>
-      <PromptLine surface="public" />
+      <PromptLine surface="whop" />
       <div className="text-[#5A5045] italic mt-2">
         {`// running... ${ideaSnippet}`}
       </div>
@@ -563,50 +425,10 @@ function RunningScreen({
   );
 }
 
-function RateLimitScreen({
-  rateLimit,
-  onReset,
-}: {
-  rateLimit: RateLimitInfo;
-  onReset: () => void;
-}) {
-  return (
-    <div className="text-center py-8">
-      <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-[var(--color-accent-warm)] mb-4">
-        Daily limit hit · {rateLimit.used} / {rateLimit.limit}
-      </div>
-      <h2 className="font-display font-bold text-[34px] leading-[1.1] tracking-[-0.025em] text-[var(--color-terminal-text)] mb-3">
-        You&apos;re out of public runs today.
-      </h2>
-      <p className="text-[var(--color-terminal-faint)] text-[14px] leading-[1.5] max-w-[480px] mx-auto mb-7">
-        The public surface is capped at {rateLimit.limit}/day per IP so the brutal honesty
-        stays useful. Resets at UTC midnight.
-      </p>
-      <a
-        href={BUILD_ROOM_URL}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="inline-block bg-[var(--color-accent)] text-white px-7 py-3 rounded-[3px] font-mono text-xs uppercase tracking-[0.1em] font-medium hover:bg-[var(--color-accent-warm)] transition-colors"
-      >
-        {rateLimit.cta} →
-      </a>
-      <div className="mt-7">
-        <button
-          type="button"
-          onClick={onReset}
-          className="bg-transparent border border-[var(--color-terminal-border)] text-[var(--color-terminal-faint)] px-4 py-1.5 rounded-[3px] font-mono text-[11px] uppercase tracking-[0.1em] hover:border-[var(--color-terminal-text)] hover:text-[var(--color-terminal-text)] cursor-pointer transition-colors"
-        >
-          ← Back
-        </button>
-      </div>
-    </div>
-  );
-}
-
 function BottomStatus({ skillVersion }: { skillVersion: string }) {
   return (
     <div className="mt-6 px-2 flex justify-between items-center font-mono text-[11px] uppercase tracking-[0.08em] text-[var(--color-ink-faint)]">
-      <span>Public surface · 1 idea/run · 3/day per IP</span>
+      <span>Whop surface · 1 idea/run</span>
       <span>Skill v{skillVersion}</span>
     </div>
   );
