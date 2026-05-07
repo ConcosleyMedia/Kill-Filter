@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   CRITERION_LABEL,
   Enhancements,
@@ -19,6 +19,28 @@ import {
 import { KeepFiles } from "./keep-files";
 
 void CRITERION_LABEL;
+
+interface WhopQuota {
+  daily_used: number;
+  daily_limit: number;
+  daily_remaining: number;
+  weekly_used: number;
+  weekly_limit: number;
+  weekly_remaining: number;
+  exceeded: boolean;
+  blocked_scope: "daily" | "weekly" | null;
+  resets_at: string;
+}
+
+interface RateLimitInfo {
+  scope: "daily" | "weekly";
+  daily_used: number;
+  daily_limit: number;
+  weekly_used: number;
+  weekly_limit: number;
+  resets_at: string;
+  cta: string;
+}
 
 interface ExperienceToolProps {
   userId: string;
@@ -40,6 +62,23 @@ export function ExperienceTool({ userId, accessLevel }: ExperienceToolProps) {
   const [refinementOf, setRefinementOf] = useState<
     { parentRunId: string; mode: "REWORK" | "KILL" } | null
   >(null);
+  const [quota, setQuota] = useState<WhopQuota | null>(null);
+  const [rateLimit, setRateLimit] = useState<RateLimitInfo | null>(null);
+
+  const refreshQuota = useCallback(async () => {
+    try {
+      const res = await fetch("/api/whop-quota");
+      if (!res.ok) return;
+      const data = (await res.json()) as WhopQuota;
+      setQuota(data);
+    } catch {
+      // ignore — counter just won't update
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshQuota();
+  }, [refreshQuota]);
 
   const required = [idea, buyer, paysFor, frequency];
   const filledCount = required.filter((v) => v.trim().length > 0).length;
@@ -53,6 +92,7 @@ export function ExperienceTool({ userId, accessLevel }: ExperienceToolProps) {
     setErrorMsg(null);
     setPreviouslyScoredAt(null);
     setRefinementOf(null);
+    setRateLimit(null);
   };
 
   const applyEnhancement = (opt: EnhancementOption, parentRunId: string) => {
@@ -79,6 +119,7 @@ export function ExperienceTool({ userId, accessLevel }: ExperienceToolProps) {
     setVerdict(null);
     setErrorMsg(null);
     setPreviouslyScoredAt(null);
+    setRateLimit(null);
 
     try {
       const res = await fetch("/api/score", {
@@ -93,6 +134,26 @@ export function ExperienceTool({ userId, accessLevel }: ExperienceToolProps) {
           refinement_of: refinementOf?.parentRunId ?? undefined,
         }),
       });
+
+      if (res.status === 429) {
+        const payload = (await res.json().catch(() => null)) as
+          | (RateLimitInfo & { error?: string })
+          | null;
+        if (payload && payload.scope) {
+          setRateLimit({
+            scope: payload.scope,
+            daily_used: payload.daily_used,
+            daily_limit: payload.daily_limit,
+            weekly_used: payload.weekly_used,
+            weekly_limit: payload.weekly_limit,
+            resets_at: payload.resets_at,
+            cta: payload.cta,
+          });
+        }
+        setPhase("error");
+        setErrorMsg("rate_limited");
+        return;
+      }
 
       if (!res.ok || !res.body) {
         const err = await res.json().catch(() => ({ error: "request_failed" }));
@@ -138,6 +199,9 @@ export function ExperienceTool({ userId, accessLevel }: ExperienceToolProps) {
           } else if (event === "verdict") {
             setVerdict(payload as VerdictEvent);
             setPhase("result");
+            // The server has incremented quota by now (or it was a cache hit
+            // that didn't); refresh so the TopBar counter matches reality.
+            refreshQuota();
           } else if (event === "error") {
             const m = (payload as { message?: string }).message ?? "unknown";
             setErrorMsg(m);
@@ -153,13 +217,15 @@ export function ExperienceTool({ userId, accessLevel }: ExperienceToolProps) {
 
   return (
     <div className="min-h-screen">
-      <TopBar accessLevel={accessLevel} />
+      <TopBar accessLevel={accessLevel} quota={quota} />
 
       <div className="max-w-[1080px] mx-auto px-8 pt-8 pb-20">
         <Header userId={userId} />
 
         <Terminal>
-          {phase === "idle" ? (
+          {rateLimit ? (
+            <WhopRateLimitScreen rateLimit={rateLimit} onReset={reset} />
+          ) : phase === "idle" ? (
             <IdleScreen
               idea={idea}
               buyer={buyer}
@@ -214,7 +280,14 @@ export function ExperienceTool({ userId, accessLevel }: ExperienceToolProps) {
   );
 }
 
-function TopBar({ accessLevel }: { accessLevel: string }) {
+function TopBar({
+  accessLevel,
+  quota,
+}: {
+  accessLevel: string;
+  quota: WhopQuota | null;
+}) {
+  const dot = quota?.exceeded ? "var(--color-accent)" : "var(--color-keep)";
   return (
     <div
       className="border-b border-[var(--color-rule)] bg-[var(--color-bg)]
@@ -226,12 +299,74 @@ function TopBar({ accessLevel }: { accessLevel: string }) {
       </div>
       <div className="flex gap-4 items-center">
         <span className="flex gap-1.5 items-center">
-          <span className="w-1.5 h-1.5 bg-[var(--color-keep)] rounded-full" />
+          <span className="w-1.5 h-1.5 rounded-full" style={{ background: dot }} />
           whop · {accessLevel}
         </span>
+        {quota && (
+          <span className="text-[var(--color-ink-faint)]">
+            {quota.daily_used}/{quota.daily_limit} today ·{" "}
+            {quota.weekly_used}/{quota.weekly_limit} weekly
+          </span>
+        )}
       </div>
     </div>
   );
+}
+
+function WhopRateLimitScreen({
+  rateLimit,
+  onReset,
+}: {
+  rateLimit: RateLimitInfo;
+  onReset: () => void;
+}) {
+  const isWeekly = rateLimit.scope === "weekly";
+  const title = isWeekly
+    ? "You've used this week's runs."
+    : "You've used today's run.";
+  const sub = isWeekly
+    ? `${rateLimit.weekly_used} of ${rateLimit.weekly_limit} weekly runs spent. Free tier resets ${formatResets(rateLimit.resets_at)}.`
+    : `Today's daily run is spent. ${Math.max(0, rateLimit.weekly_limit - rateLimit.weekly_used)} of ${rateLimit.weekly_limit} weekly runs still available — daily resets at UTC midnight.`;
+
+  return (
+    <div className="text-center py-8">
+      <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-[var(--color-accent-warm)] mb-4">
+        {isWeekly ? "Weekly limit · hit" : "Daily limit · hit"}
+      </div>
+      <h2 className="font-display font-bold text-[34px] leading-[1.1] tracking-[-0.025em] text-[var(--color-terminal-text)] mb-3">
+        {title}
+      </h2>
+      <p className="text-[var(--color-terminal-faint)] text-[14px] leading-[1.5] max-w-[520px] mx-auto mb-7">
+        {sub}
+      </p>
+      <a
+        href="https://whop.com/build-room"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-block bg-[var(--color-accent)] text-white px-7 py-3 rounded-[3px] font-mono text-xs uppercase tracking-[0.1em] font-medium hover:bg-[var(--color-accent-warm)] transition-colors"
+      >
+        {rateLimit.cta} →
+      </a>
+      <div className="mt-7">
+        <button
+          type="button"
+          onClick={onReset}
+          className="bg-transparent border border-[var(--color-terminal-border)] text-[var(--color-terminal-faint)] px-4 py-1.5 rounded-[3px] font-mono text-[11px] uppercase tracking-[0.1em] hover:border-[var(--color-terminal-text)] hover:text-[var(--color-terminal-text)] cursor-pointer transition-colors"
+        >
+          ← Back
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function formatResets(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleDateString(undefined, {
+    weekday: "long",
+    month: "short",
+    day: "numeric",
+  });
 }
 
 function Header({ userId }: { userId: string }) {
@@ -428,7 +563,7 @@ function RunningScreen({
 function BottomStatus({ skillVersion }: { skillVersion: string }) {
   return (
     <div className="mt-6 px-2 flex justify-between items-center font-mono text-[11px] uppercase tracking-[0.08em] text-[var(--color-ink-faint)]">
-      <span>Whop surface · 1 idea/run</span>
+      <span>Whop surface · 1/day · 5/week · refinements free</span>
       <span>Skill v{skillVersion}</span>
     </div>
   );

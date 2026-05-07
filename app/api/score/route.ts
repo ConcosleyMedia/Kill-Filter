@@ -11,8 +11,12 @@ import { ideaHash, ipHash, normalizeIdea } from "@/lib/normalize";
 import { supabaseConfigured } from "@/lib/supabase";
 import {
   getPublicQuota,
+  getWhopQuota,
   incrementPublicQuota,
+  incrementWhopQuota,
   PUBLIC_DAILY_LIMIT,
+  WHOP_DAILY_LIMIT,
+  WHOP_WEEKLY_LIMIT,
 } from "@/lib/rate-limit";
 import { findCachedRun, getRunForUser, persistRun } from "@/lib/runs";
 import { whopConfigured, whopSdk } from "@/lib/whop-sdk";
@@ -140,23 +144,43 @@ export async function POST(req: NextRequest) {
       refinementOfId.length > 0 &&
       (await isValidRefinement(refinementOfId, userKey));
 
-    // 3. No cache hit — public surface checks IP rate limit unless refinement
-    //    grace applies. Whop surface skips it (Phase 3 will add per-user limits).
-    if (surface === "public" && !isRefinement) {
-      const quota = await getPublicQuota(userKey).catch(() => null);
-      if (quota?.exceeded) {
-        return Response.json(
-          {
-            error: "rate_limited",
-            scope: "daily",
-            limit: PUBLIC_DAILY_LIMIT,
-            used: quota.used,
-            remaining: 0,
-            // The CTA shown in the rate-limit screen.
-            cta: "Free Build Room gets you 5 ideas/week. → $9/mo",
-          },
-          { status: 429 },
-        );
+    // 3. No cache hit — enforce surface-appropriate rate limits unless
+    //    refinement grace applies.
+    if (!isRefinement) {
+      if (surface === "public") {
+        const quota = await getPublicQuota(userKey).catch(() => null);
+        if (quota?.exceeded) {
+          return Response.json(
+            {
+              error: "rate_limited",
+              surface: "public",
+              scope: "daily",
+              limit: PUBLIC_DAILY_LIMIT,
+              used: quota.used,
+              remaining: 0,
+              cta: "Free Build Room gets you 5 ideas/week. → $9/mo",
+            },
+            { status: 429 },
+          );
+        }
+      } else if (surface === "whop") {
+        const wq = await getWhopQuota(userKey).catch(() => null);
+        if (wq?.exceeded) {
+          return Response.json(
+            {
+              error: "rate_limited",
+              surface: "whop",
+              scope: wq.blocked_scope,
+              daily_used: wq.daily_used,
+              daily_limit: WHOP_DAILY_LIMIT,
+              weekly_used: wq.weekly_used,
+              weekly_limit: WHOP_WEEKLY_LIMIT,
+              resets_at: wq.resets_at,
+              cta: "Paid Build Room ships unlimited scoring. → $9/mo",
+            },
+            { status: 429 },
+          );
+        }
       }
     }
 
@@ -166,7 +190,7 @@ export async function POST(req: NextRequest) {
       ideaHashValue,
       persistEnabled,
       surface,
-      countsAgainstQuota: surface === "public" && !isRefinement,
+      countsAgainstQuota: !isRefinement,
     });
   }
 
@@ -176,7 +200,7 @@ export async function POST(req: NextRequest) {
     ideaHashValue,
     persistEnabled,
     surface,
-    countsAgainstQuota: surface === "public",
+    countsAgainstQuota: false,
   });
 }
 
@@ -284,7 +308,11 @@ function streamFreshScoring(args: FreshScoringArgs): Response {
             skill_version,
           }).catch(() => crypto.randomUUID());
           if (countsAgainstQuota) {
-            await incrementPublicQuota(userKey).catch(() => 0);
+            if (surface === "public") {
+              await incrementPublicQuota(userKey).catch(() => 0);
+            } else if (surface === "whop") {
+              await incrementWhopQuota(userKey).catch(() => 0);
+            }
           }
         } else {
           run_id = crypto.randomUUID();
