@@ -72,7 +72,11 @@ export function KeepFiles({ runId }: { runId: string }) {
   }, [runId]);
 
   if (status.kind === "loading") {
-    return <Frame title="Generating your four starter files…" subtitle="Usually under 20 seconds." />;
+    return (
+      <Frame title="" subtitle="">
+        <FilesProgress />
+      </Frame>
+    );
   }
 
   if (status.kind === "error") {
@@ -145,6 +149,68 @@ export function KeepFiles({ runId }: { runId: string }) {
   );
 }
 
+// Phased progress while /api/generate-files runs. Walks through the
+// actual server stages (load templates → fill ~58 placeholder slots via
+// Sonnet → server-side substitute → persist). Indeterminate bar with a
+// shimmer because the client can't see the model's progress in real time.
+const FILES_PHASES = [
+  { atMs: 0, label: "Loading the four templates…" },
+  { atMs: 4000, label: "Drafting CLAUDE.md, spec.md, stack.md, cut-list.md…" },
+  { atMs: 12000, label: "Filling placeholder slots from your idea…" },
+  { atMs: 22000, label: "Stamping the branded footers…" },
+  { atMs: 32000, label: "Almost there — this run is on the slow side…" },
+] as const;
+const FILES_TOTAL_MS = 25000;
+
+function FilesProgress() {
+  const [elapsedMs, setElapsedMs] = useState(0);
+  useEffect(() => {
+    const start = Date.now();
+    const t = setInterval(() => setElapsedMs(Date.now() - start), 250);
+    return () => clearInterval(t);
+  }, []);
+
+  const phase =
+    [...FILES_PHASES].reverse().find((p) => elapsedMs >= p.atMs) ??
+    FILES_PHASES[0];
+  const pct = Math.min(96, (elapsedMs / FILES_TOTAL_MS) * 100);
+
+  return (
+    <div className="py-2">
+      <div className="flex items-center justify-between font-mono text-[12px] text-[var(--color-ink-soft)] mb-2">
+        <span>
+          <span className="text-[var(--color-keep-bright)]">▸</span>{" "}
+          <span className="text-[var(--color-ink)]">{phase.label}</span>
+          <span className="cursor-blink" />
+        </span>
+        <span className="text-[var(--color-ink-faint)] font-mono text-[11px]">
+          {Math.floor(elapsedMs / 1000)}s
+        </span>
+      </div>
+      <div className="h-[4px] bg-black/[0.06] rounded-[1px] overflow-hidden relative">
+        <div
+          className="h-full transition-[width] duration-300 ease-out"
+          style={{
+            width: `${pct}%`,
+            background: "var(--color-keep-bright)",
+          }}
+        />
+        <div
+          className="absolute inset-0"
+          style={{
+            background:
+              "linear-gradient(90deg, transparent 0%, rgba(63,179,105,0.3) 50%, transparent 100%)",
+            animation: "scoreShimmer 1.6s ease-in-out infinite",
+          }}
+        />
+      </div>
+      <div className="mt-2 font-mono text-[11px] text-[var(--color-ink-faint)]">
+        Each file ends with the branded Build Room footer. Read CLAUDE.md first.
+      </div>
+    </div>
+  );
+}
+
 function Frame({
   title,
   subtitle,
@@ -165,9 +231,11 @@ function Frame({
       <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-[var(--color-keep-bright)] mb-1.5">
         Output files · KEEP
       </div>
-      <div className="font-display font-bold text-[22px] leading-[1.2] tracking-[-0.02em] text-[var(--color-ink)] mb-1">
-        {title}
-      </div>
+      {title && (
+        <div className="font-display font-bold text-[22px] leading-[1.2] tracking-[-0.02em] text-[var(--color-ink)] mb-1">
+          {title}
+        </div>
+      )}
       {subtitle && (
         <div className="text-[13px] text-[var(--color-ink-soft)] mb-4">{subtitle}</div>
       )}
