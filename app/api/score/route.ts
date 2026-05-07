@@ -306,8 +306,19 @@ function streamFreshScoring(args: FreshScoringArgs): Response {
             total: result.total,
             headline,
             skill_version,
-          }).catch((err) => {
-            console.error("[/api/score] persistRun failed:", err);
+          }).catch((err: unknown) => {
+            // Vercel runtime log column truncates long messages, so split
+            // the error into 3 short lines we can read in the dashboard.
+            const errObj = err as { message?: string; details?: string; hint?: string; code?: string; status?: number; name?: string } | null;
+            console.error(
+              "[/api/score] persistRun.code:",
+              errObj?.code ?? "no_code",
+              "status:",
+              errObj?.status ?? "no_status",
+            );
+            console.error("[/api/score] persistRun.message:", errObj?.message ?? "no_message");
+            console.error("[/api/score] persistRun.details:", errObj?.details ?? "no_details");
+            console.error("[/api/score] persistRun.hint:", errObj?.hint ?? "no_hint");
             return crypto.randomUUID();
           });
           if (countsAgainstQuota) {

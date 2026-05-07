@@ -136,6 +136,60 @@ export function InputRow({
   );
 }
 
+export function ScoringProgress({
+  scoredCount,
+  isActive,
+}: {
+  scoredCount: number;
+  isActive: boolean;
+}) {
+  const total = 5;
+  const phase =
+    scoredCount === 0
+      ? "Reading rubric…"
+      : scoredCount < total
+        ? `Scoring criterion ${scoredCount} of ${total}…`
+        : "Computing verdict…";
+  const pct = isActive
+    ? Math.max(8, (scoredCount / total) * 100)
+    : (scoredCount / total) * 100;
+
+  return (
+    <div className="mt-3 mb-1">
+      <div className="flex items-center justify-between font-mono text-[11.5px] text-[var(--color-terminal-faint)] mb-2">
+        <span>
+          <span className="text-[var(--color-accent-warm)]">▸</span>{" "}
+          <span className="text-[var(--color-terminal-text)]">{phase}</span>
+          {isActive && <span className="cursor-blink" />}
+        </span>
+        <span>
+          {scoredCount}/{total}
+        </span>
+      </div>
+      <div className="h-[3px] bg-white/[0.06] rounded-[1px] overflow-hidden relative">
+        <div
+          className="h-full transition-[width] duration-700 ease-out"
+          style={{
+            width: `${pct}%`,
+            background: "var(--color-accent-warm)",
+            opacity: isActive ? 1 : 0.6,
+          }}
+        />
+        {isActive && scoredCount < total && (
+          <div
+            className="absolute inset-0"
+            style={{
+              background:
+                "linear-gradient(90deg, transparent 0%, rgba(232,93,44,0.25) 50%, transparent 100%)",
+              animation: "scoreShimmer 1.6s ease-in-out infinite",
+            }}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function ScoreRow({
   index,
   criterion,

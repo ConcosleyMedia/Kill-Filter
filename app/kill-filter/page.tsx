@@ -9,6 +9,7 @@ import {
   PromptLine,
   RefinementBanner,
   ScoreRow,
+  ScoringProgress,
   Terminal,
   VerdictBlock,
   type CriterionEvent,
@@ -492,7 +493,7 @@ function RunningScreen({
     return <RateLimitScreen rateLimit={rateLimit} onReset={onReset} />;
   }
 
-  const showCursor = phase === "running" && !verdict && !errorMsg;
+  const isLoading = phase === "running" && !verdict && !errorMsg;
   const cachedDate = previouslyScoredAt
     ? new Date(previouslyScoredAt).toLocaleDateString(undefined, {
         month: "short",
@@ -519,11 +520,8 @@ function RunningScreen({
           ✓ Previously scored on {cachedDate} — cached
         </div>
       )}
-      {(criteria.length > 0 || phase !== "idle") && !previouslyScoredAt && (
-        <div className="text-[#5A5045] italic mt-1">
-          {`// scoring against 5 criteria`}
-          {showCursor && criteria.length === 0 && <span className="cursor-blink" />}
-        </div>
+      {!previouslyScoredAt && (isLoading || criteria.length > 0) && (
+        <ScoringProgress scoredCount={criteria.length} isActive={isLoading} />
       )}
 
       <div className="mt-5 flex flex-col gap-3">
