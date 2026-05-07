@@ -48,7 +48,7 @@ function inspect(name: string, expectedLength?: number): VarReport {
   };
 }
 
-export async function GET(_req: NextRequest) {
+export async function GET() {
   return Response.json({
     ANTHROPIC_API_KEY: inspect("ANTHROPIC_API_KEY", 108),
     NEXT_PUBLIC_SUPABASE_URL: inspect("NEXT_PUBLIC_SUPABASE_URL"),
@@ -56,5 +56,7 @@ export async function GET(_req: NextRequest) {
     SUPABASE_SERVICE_ROLE_KEY: inspect("SUPABASE_SERVICE_ROLE_KEY"),
     IP_HASH_SALT: inspect("IP_HASH_SALT", 64),
     SKILL_VERSION: inspect("SKILL_VERSION"),
+    WHOP_API_KEY: inspect("WHOP_API_KEY"),
+    WHOP_APP_ID: inspect("WHOP_APP_ID"),
   });
 }
